@@ -5,15 +5,11 @@
 		- Тёмная (чёрная) современная тема
 		- Боковые вкладки слева, аватарка/иконка панели сверху
 		- Плавающая перетаскиваемая кнопка открытия/закрытия панели
-		- Продвинутая обёртка колбэков: pcall, кулдаун, ретраи, таймаут, onError,
-		  опциональные тосты об ошибках прямо в игре
+		- Продвинутая обёртка колбэков: pcall, кулдаун, ретраи, таймаут, onError
 		- Встроенный перевод интерфейса (русский/английский) с переключателем RU/EN
 		- Ссылки на Discord/Telegram в боковой панели
-		- Анимированные (вращающиеся) 3D-модели — для кнопки и внутри вкладок
+		- Анимированные (вращающиеся) 3D-модели
 		- Элементы: Button, Toggle, Checkbox, Slider, Label, Dropdown, ModelViewer
-		- Оптимизировано под мобильные экраны (крупные тач-зоны)
-
-	Использование смотри в Example_Usage.lua
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -70,7 +66,6 @@ local function stroke(color: Color3?, thickness: number?)
 	})
 end
 
--- Строки самой библиотеки на двух языках (используются, если явно не задан Language)
 local BUILTIN = {
 	LinkNote = {
 		ru = "Игра не может открыть ссылку напрямую — выделите текст выше и скопируйте вручную",
@@ -81,13 +76,11 @@ local BUILTIN = {
 		en = "Error: ",
 	},
 	MobileWarning = {
-		ru = "[ModernUI] Библиотека пока оптимизирована только под мобильные устройства. Интерфейс всё равно будет создан, но не гарантируется корректный вид на ПК.",
-		en = "[ModernUI] The library is currently optimized for mobile devices only. The UI will still be created, but correct appearance on PC isn't guaranteed.",
+		ru = "[ModernUI] Библиотека пока оптимизирована только под мобильные устройства.",
+		en = "[ModernUI] The library is currently optimized for mobile devices only.",
 	},
 }
 
--- Достаёт текст под нужный язык. template может быть обычной строкой (тогда
--- не переводится и показывается как есть) либо таблицей { ru = "...", en = "..." }.
 local function resolveText(template: any, lang: string): string
 	if typeof(template) == "table" then
 		return template[lang] or template.en or template.ru or ""
@@ -95,7 +88,6 @@ local function resolveText(template: any, lang: string): string
 	return tostring(template)
 end
 
--- Короткая метка для логов/варнингов (не переводится, просто берёт любой вариант)
 local function toLabel(template: any): string
 	if typeof(template) == "table" then
 		return tostring(template.ru or template.en or "callback")
@@ -103,8 +95,6 @@ local function toLabel(template: any): string
 	return tostring(template)
 end
 
--- Привязывает текстовый Instance к переводимому шаблону и запоминает его,
--- чтобы Window:SetLanguage() могла обновить текст на лету.
 local function bindText(self_: any, instance: Instance, template: any)
 	if self_ and self_._i18n then
 		table.insert(self_._i18n, { instance = instance, template = template })
@@ -117,15 +107,14 @@ end
 --================================================================
 export type WrapOptions = {
 	label: string?,
-	cooldown: number?,    -- минимальный интервал между вызовами, сек
-	retries: number?,     -- сколько раз повторить попытку при ошибке
-	retryDelay: number?,  -- пауза между повторными попытками, сек
-	timeout: number?,     -- если функция выполняется дольше — считается ошибкой "timeout"
+	cooldown: number?,
+	retries: number?,
+	retryDelay: number?,
+	timeout: number?,
 	onError: ((err: string) -> ())?,
-	silent: boolean?,     -- не писать warn в консоль
+	silent: boolean?,
 }
 
--- Базовая обёртка: pcall, защита от повторного запуска, кулдаун, ретраи, таймаут.
 local function wrapCallback(fn: (...any) -> ...any, opts: WrapOptions?)
 	opts = opts or {}
 	local label = opts.label or "callback"
@@ -190,10 +179,6 @@ local function wrapCallback(fn: (...any) -> ...any, opts: WrapOptions?)
 	end
 end
 
--- Приводит колбэк элемента к обёрнутой функции.
--- callback может быть обычной функцией (базовое поведение) ЛИБО таблицей вида
--- { fn = function(...) ... end, cooldown = 0.5, retries = 2, timeout = 3, onError = function(err) ... end }
--- для более тонкой настройки конкретного элемента.
 local function normalizeCallback(callback: any, label: string, self_: any)
 	local function toastOnError(err: string)
 		if self_ and self_._showErrorToast then
@@ -228,8 +213,6 @@ local function isMobile(): boolean
 	return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 end
 
--- Создаёт ViewportFrame с моделью, которая плавно вращается вокруг своей оси.
--- Возвращает сам viewport и функцию Destroy() для остановки анимации.
 local function createModelViewport(props: {[string]: any}, model: Model, spinSpeed: number?)
 	local viewport = new("ViewportFrame", props, { corner(12) })
 
@@ -269,12 +252,6 @@ local function createModelViewport(props: {[string]: any}, model: Model, spinSpe
 	return viewport, destroy
 end
 
---================================================================
--- ЭФФЕКТ "ЛЕСЕНКОЙ" (stagger cascade reveal)
---================================================================
--- Возвращает список [{instance, property, original}] всех свойств прозрачности,
--- которые есть у инстанса (GuiObject может иметь несколько сразу — например,
--- у TextButton это и BackgroundTransparency, и TextTransparency).
 local function collectTransparencyProps(inst: Instance): {{inst: Instance, prop: string}}
 	local result = {}
 	if inst:IsA("GuiObject") then
@@ -292,9 +269,6 @@ local function collectTransparencyProps(inst: Instance): {{inst: Instance, prop:
 	return result
 end
 
--- Плавно показывает прямых детей контейнера друг за другом ("лесенкой"):
--- каждый следующий элемент чуть смещён вниз и прозрачен, затем плавно
--- встаёт на место и проявляется, с нарастающей задержкой.
 local function cascadeIn(container: Instance, opts: {stagger: number?, offset: number?, startDelay: number?}?)
 	opts = opts or {}
 	local stagger = opts.stagger or 0.05
@@ -307,7 +281,6 @@ local function cascadeIn(container: Instance, opts: {stagger: number?, offset: n
 			index += 1
 			local itemDelay = startDelay + (index - 1) * stagger
 
-			-- собираем все прозрачности (сам элемент + все его потомки)
 			local snapshot = collectTransparencyProps(child)
 			for _, desc in ipairs(child:GetDescendants()) do
 				for _, entry in ipairs(collectTransparencyProps(desc)) do
@@ -321,7 +294,6 @@ local function cascadeIn(container: Instance, opts: {stagger: number?, offset: n
 				originalValues[i] = (entry.inst :: any)[entry.prop]
 			end
 
-			-- мгновенно прячем перед стартом анимации
 			child.Position = originalPos + UDim2.new(0, 0, 0, slideOffset)
 			for i, entry in ipairs(snapshot) do
 				(entry.inst :: any)[entry.prop] = 1
@@ -340,9 +312,6 @@ local function cascadeIn(container: Instance, opts: {stagger: number?, offset: n
 	end
 end
 
---================================================================
--- БИБЛИОТЕКА
---================================================================
 local ModernUI = {}
 ModernUI.__index = ModernUI
 
@@ -355,15 +324,13 @@ export type Window = typeof(setmetatable({} :: {
 	Tabs: {[string]: Frame},
 	_firstTab: string?,
 }, ModernUI))
-
--- Создаёт главное окно панели
 function ModernUI.new(config: {
 	Title: (string | {[string]: string})?,
-	AvatarId: string?, -- например "rbxassetid://123456" или числовой UserId для аватарки игрока
+	AvatarId: string?,
 	MobileOnly: boolean?,
-	Language: ("ru" | "en")?,        -- язык интерфейса по умолчанию (по умолчанию "ru")
-	ShowErrorsAsToast: boolean?,      -- показывать ошибки колбэков всплывающим тостом игроку
-	IncludeSettingsTab: boolean?,     -- добавлять встроенную вкладку "Settings" в конец списка (по умолчанию true)
+	Language: ("ru" | "en")?,
+	ShowErrorsAsToast: boolean?,
+	IncludeSettingsTab: boolean?,
 }) : Window
 	config = config or {}
 	local initialLang = config.Language or "ru"
@@ -380,7 +347,6 @@ function ModernUI.new(config: {
 		Parent = PlayerGui,
 	})
 
-	-- Главная панель (адаптивный размер под телефон)
 	local main = new("Frame", {
 		Name = "Main",
 		Size = UDim2.new(0.86, 0, 0.62, 0),
@@ -390,7 +356,6 @@ function ModernUI.new(config: {
 		Parent = screenGui,
 	}, { corner(16), stroke(Theme.Stroke, 1) })
 
-	-- Боковая колонка вкладок (слева)
 	local sidebar = new("Frame", {
 		Name = "Sidebar",
 		Size = UDim2.new(0, 74, 1, 0),
@@ -398,7 +363,6 @@ function ModernUI.new(config: {
 		Parent = main,
 	}, { corner(16) })
 
-	-- маскируем правый край сайдбара, чтобы скругление было только слева
 	new("Frame", {
 		Size = UDim2.new(0, 16, 1, 0),
 		Position = UDim2.new(1, -16, 0, 0),
@@ -407,7 +371,6 @@ function ModernUI.new(config: {
 		Parent = sidebar,
 	})
 
-	-- Аватарка/иконка панели сверху сайдбара
 	local avatarHolder = new("Frame", {
 		Size = UDim2.new(0, 52, 0, 52),
 		Position = UDim2.new(0.5, 0, 0, 14),
@@ -426,7 +389,6 @@ function ModernUI.new(config: {
 		Parent = avatarHolder,
 	}, { corner(24) })
 
-	-- Контейнер кнопок-вкладок (под аватаркой), со скроллом на случай многих вкладок
 	local tabButtons = new("ScrollingFrame", {
 		Name = "TabButtons",
 		Size = UDim2.new(1, 0, 1, -136),
@@ -446,7 +408,6 @@ function ModernUI.new(config: {
 		new("UIPadding", { PaddingTop = UDim.new(0, 4) }),
 	})
 
-	-- Футер сайдбара для иконок соцсетей (Discord/Telegram/др.), заполняется через AddSocialLink
 	local socialFooter = new("Frame", {
 		Name = "SocialFooter",
 		Size = UDim2.new(1, -8, 0, 44),
@@ -463,7 +424,6 @@ function ModernUI.new(config: {
 		}),
 	})
 
-	-- Область контента вкладок (справа от сайдбара)
 	local contentHolder = new("Frame", {
 		Name = "ContentHolder",
 		Size = UDim2.new(1, -74, 1, 0),
@@ -511,9 +471,6 @@ function ModernUI.new(config: {
 		bindText(self, titleLabel, config.Title)
 	end
 
-	--============================================================
-	-- ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА (RU / EN) — в правом верхнем углу панели
-	--============================================================
 	do
 		local langHolder = new("Frame", {
 			Name = "LanguageSwitch",
@@ -562,10 +519,6 @@ function ModernUI.new(config: {
 		(self :: any)._updateLangButtons = updateLangButtons
 	end
 
-	--============================================================
-	-- ПЛАВАЮЩАЯ КНОПКА ОТКРЫТИЯ/СВОРАЧИВАНИЯ ПАНЕЛИ
-	-- (перетаскиваемая, тап — тоггл; своя реализация, без чужого кода)
-	--============================================================
 	local floatBtn = new("TextButton", {
 		Name = "ToggleButton",
 		Size = UDim2.new(0, 52, 0, 52),
@@ -577,7 +530,6 @@ function ModernUI.new(config: {
 		Parent = screenGui,
 	}, { corner(26), stroke(Color3.new(1, 1, 1), 1) })
 
-	-- иконка-гамбургер из трёх полосок, умеет плавно превращаться в крестик
 	local iconHolder = new("Frame", {
 		Size = UDim2.new(0, 22, 0, 16),
 		Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -614,7 +566,6 @@ function ModernUI.new(config: {
 		Parent = iconHolder,
 	}, { corner(2) })
 
-	-- Переключает вид иконки: гамбургер (три полоски) <-> крестик
 	local function setIconState(open: boolean)
 		if open then
 			TweenService:Create(barTop, TWEEN_MED, {
@@ -685,11 +636,6 @@ function ModernUI.new(config: {
 	(self :: any)._setIconState = setIconState
 	(self :: any)._iconHolder = iconHolder
 
-	--============================================================
-	-- ВСТРОЕННАЯ ВКЛАДКА SETTINGS
-	-- Создаётся здесь, но благодаря большому layoutOrder всегда остаётся
-	-- последней в списке — даже если вы добавите свои вкладки уже после new().
-	--============================================================
 	if config.IncludeSettingsTab ~= false then
 		local settingsTab = (self :: any):CreateTab(
 			{ ru = "Настройки", en = "Settings" },
@@ -717,7 +663,7 @@ function ModernUI.new(config: {
 					base.X.Scale * scale, base.X.Offset,
 					base.Y.Scale * scale, base.Y.Offset
 				)
-				self__._mainSize = newSize -- запоминаем как целевой размер для будущих открытий панели
+				self__._mainSize = newSize
 				self__.Main.Size = newSize
 			end
 		)
@@ -730,7 +676,6 @@ function ModernUI.new(config: {
 	return (self :: any) :: Window
 end
 
--- Открывает/закрывает панель с анимацией (genie-эффект к центру)
 function ModernUI.Toggle(self: Window)
 	local self_ = self :: any
 	self_._open = not self_._open
@@ -741,8 +686,6 @@ function ModernUI.Toggle(self: Window)
 		self_.Main.Size = UDim2.new(0, 0, 0, 0)
 		TweenService:Create(self_.Main, TWEEN_MED, { Size = self_._mainSize }):Play()
 
-		-- эффект "лесенкой": вкладки в сайдбаре и элементы активной вкладки
-		-- проявляются друг за другом, а не все разом
 		cascadeIn(self_.TabButtons, { stagger = 0.04, offset = 14, startDelay = 0.05 })
 		for _, page in pairs(self_.Tabs) do
 			if page.Visible then
@@ -760,7 +703,6 @@ function ModernUI.Toggle(self: Window)
 	end
 end
 
--- Переключает язык всего интерфейса (заголовок, вкладки, элементы с переводимым текстом)
 function ModernUI.SetLanguage(self: Window, lang: "ru" | "en")
 	local self_ = self :: any
 	self_.Language = lang
@@ -774,8 +716,6 @@ function ModernUI.SetLanguage(self: Window, lang: "ru" | "en")
 	end
 end
 
--- Показывает всплывающее уведомление (тост) внизу экрана.
--- message может быть строкой или { ru = "...", en = "..." }
 function ModernUI.Notify(self: Window, message: string | {[string]: string}, duration: number?)
 	local self_ = self :: any
 	local text = resolveText(message, self_.Language)
@@ -823,8 +763,6 @@ function ModernUI.Notify(self: Window, message: string | {[string]: string}, dur
 	end)
 end
 
--- Устанавливает/меняет аватарку панели
--- avatarId: "rbxassetid://..." строка ЛИБО числовой UserId (тогда подтянется аватар игрока)
 function ModernUI.SetAvatar(self: Window, avatarId: string | number)
 	if typeof(avatarId) == "number" then
 		local Players_ = game:GetService("Players")
@@ -839,11 +777,8 @@ function ModernUI.SetAvatar(self: Window, avatarId: string | number)
 	end
 end
 
--- Заменяет иконку плавающей кнопки на вращающуюся 3D-модель (ViewportFrame)
 function ModernUI.SetButtonModel(self: Window, model: Model, spinSpeed: number?)
 	local self_ = self :: any
-
-	-- убираем предыдущую модель кнопки, если была
 	local old = self_.ToggleButton:FindFirstChild("ButtonModelViewport")
 	if old then old:Destroy() end
 
@@ -862,10 +797,6 @@ function ModernUI.SetButtonModel(self: Window, model: Model, spinSpeed: number?)
 	return viewport
 end
 
--- Добавляет иконку соцсети (Discord/Telegram/Custom) в нижнюю часть боковой панели.
--- kind: "Discord" | "Telegram" | "Custom"
--- url: ссылка на канал/сервер
--- customLabel: нужен только для kind == "Custom" (буква иконки берётся из первой буквы)
 function ModernUI.AddSocialLink(self: Window, kind: "Discord" | "Telegram" | "Custom", url: string, customLabel: string?)
 	local self_ = self :: any
 
@@ -898,8 +829,6 @@ function ModernUI.AddSocialLink(self: Window, kind: "Discord" | "Telegram" | "Cu
 	end)
 
 	btn.MouseButton1Click:Connect(wrapCallback(function()
-		-- Roblox не даёт открывать произвольные внешние ссылки из игры на всех платформах,
-		-- поэтому сначала пробуем системный браузер, а если не вышло — показываем ссылку для копирования
 		local opened = false
 		pcall(function()
 			opened = GuiService:OpenBrowserWindowAsync(url) and true or false
@@ -912,7 +841,6 @@ function ModernUI.AddSocialLink(self: Window, kind: "Discord" | "Telegram" | "Cu
 	return btn
 end
 
--- Показывает всплывающее окно со ссылкой, которую можно выделить и скопировать вручную
 function ModernUI._ShowLinkPopup(self: Window, title: string, url: string)
 	local self_ = self :: any
 
@@ -992,11 +920,6 @@ function ModernUI._ShowLinkPopup(self: Window, title: string, url: string)
 		Parent = card,
 	})
 end
-
--- Создаёт новую вкладку (кнопка слева + панель контента справа)
--- Создаёт новую вкладку (кнопка слева + панель контента справа).
--- _opts — служебный параметр для внутренних нужд библиотеки (например, встроенной вкладки Settings),
--- обычным пользователям библиотеки задавать его не нужно.
 function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, icon: string?, _opts: {isSystem: boolean?, tabId: string?, layoutOrder: number?}?)
 	local self_ = self :: any
 	local opts = _opts or {}
@@ -1008,7 +931,6 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 	self_._tabCounter = (self_._tabCounter or 0) + 1
 	local layoutOrder = opts.layoutOrder or self_._tabCounter
 
-	-- Кнопка вкладки
 	local btn = new("TextButton", {
 		Name = tabId,
 		LayoutOrder = layoutOrder,
@@ -1044,7 +966,6 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 	})
 	bindText(self_, tabLabel, name)
 
-	-- Панель контента вкладки
 	local page = new("ScrollingFrame", {
 		Name = tabId .. "_Page",
 		Size = UDim2.new(1, -32, 1, -(28 + self_._titleOffset)),
@@ -1076,11 +997,9 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 				}):Play()
 			end
 		end
-		-- элементы новой вкладки тоже проявляются "лесенкой"
 		cascadeIn(page, { stagger = 0.05, offset = 20, startDelay = 0 })
 	end)
 
-	-- Возвращаем "хэндл" вкладки со всеми конструкторами элементов
 	local Tab = {}
 
 	function Tab.CreateButton(text: string | {[string]: string}, callback: any)
@@ -1187,7 +1106,6 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 		}
 	end
 
-	-- Классический чекбокс (квадратик с галочкой), в отличие от CreateToggle (переключатель-ползунок)
 	function Tab.CreateCheckbox(text: string | {[string]: string}, default: boolean?, callback: any)
 		local wrapped = normalizeCallback(callback, toLabel(text), self_)
 		local checked = default or false
@@ -1380,7 +1298,6 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 		return labelInst
 	end
 
-	-- Карточка с вращающейся 3D-моделью внутри вкладки (например, для превью скина/предмета)
 	function Tab.CreateModelViewer(model: Model, height: number?, spinSpeed: number?)
 		local holder = new("Frame", {
 			Size = UDim2.new(1, 0, 0, height or 180),
@@ -1401,10 +1318,7 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 			Destroy = destroy,
 		}
 	end
-
-	-- Примечание: сами варианты (options) остаются обычными строками (значение = отображаемый текст).
-	-- Подпись поля (text) поддерживает перевод, как и другие элементы.
-	function Tab.CreateDropdown(text: string | {[string]: string}, options: {string}, default: string?, callback: any)
+		function Tab.CreateDropdown(text: string | {[string]: string}, options: {string}, default: string?, callback: any)
 		local wrapped = normalizeCallback(callback, toLabel(text), self_)
 		local selected = default or options[1]
 		local open = false
@@ -1487,7 +1401,6 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 	return Tab
 end
 
--- Полностью удаляет панель
 function ModernUI.Destroy(self: Window)
 	(self :: any).ScreenGui:Destroy()
 end
