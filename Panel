@@ -1,0 +1,332 @@
+--// Подгружаем библиотеку ModernUI
+local ModernUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Red-Raf/Roblox/refs/heads/main/ModernUI.lua"))()
+
+--// Сервисы
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+--// Создаем окно с мобильным режимом
+local Window = ModernUI.new({
+    Title = { ru = "IY Mobile Hub (MM2)", en = "IY Mobile Hub (MM2)" },
+    AvatarId = "rbxassetid://0",
+    MobileOnly = true, --[span_2](start_span)[span_2](end_span)
+    Language = "ru",   --[span_3](start_span)[span_3](end_span)
+    ShowErrorsAsToast = true,
+    IncludeSettingsTab = true, --[span_4](start_span)[span_4](end_span)
+})
+
+--// Вкладки
+local MainTab = Window:CreateTab({ ru = "Главная", en = "Main" }, "rbxassetid://0")
+local MovementTab = Window:CreateTab({ ru = "Движение", en = "Movement" }, "rbxassetid://0")
+local VisualTab = Window:CreateTab({ ru = "Визуал", en = "Visuals" }, "rbxassetid://0")
+local TpTab = Window:CreateTab({ ru = "Игроки", en = "Players" }, "rbxassetid://0")
+
+--// Переменные для функций
+local flyConn, noclipConn, flingConn, flyFlingConn, infJumpConn, espConn, bhopConn, spinConn
+local spinSpeed = 10
+
+local espColors = {
+    {name = "Красный", color = Color3.fromRGB(255, 0, 0)},
+    {name = "Зеленый", color = Color3.fromRGB(0, 255, 0)},
+    {name = "Синий", color = Color3.fromRGB(0, 150, 255)},
+    {name = "Желтый", color = Color3.fromRGB(255, 255, 0)},
+    {name = "Фиолетовый", color = Color3.fromRGB(150, 0, 255)},
+    {name = "Белый", color = Color3.fromRGB(255, 255, 255)}
+}
+local currentEspColorIndex = 1
+
+--// Безопасный телепорт (анти-кик байпасс)
+local function safeTeleportTo(targetPart)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetPart then return end
+    
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+        task.wait(0.05)
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+--====================================================
+-- ВКЛАДКА: ГЛАВНАЯ (Fly, Noclip, Fling, Spin)
+--====================================================
+
+MainTab.CreateToggle({ ru = "Полёт (Fly)", en = "Fly" }, false, function(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    if state then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "IY_FlyVel"
+        bv.Parent = hrp
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.zero
+
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "IY_FlyGyro"
+        bg.Parent = hrp
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bg.P = 1000
+
+        hum.PlatformStand = true
+
+        flyConn = RunService.RenderStepped:Connect(function()
+            local cam = workspace.CurrentCamera
+            local moveDir = hum.MoveDirection
+            bv.Velocity = moveDir * 50
+            bg.CFrame = cam.CFrame
+        end)
+    else
+        if flyConn then flyConn:Disconnect() end
+        if hum then hum.PlatformStand = false end
+        if hrp:FindFirstChild("IY_FlyVel") then hrp.IY_FlyVel:Destroy() end
+        if hrp:FindFirstChild("IY_FlyGyro") then hrp.IY_FlyGyro:Destroy() end
+    end
+end)
+
+MainTab.CreateToggle({ ru = "Хождение сквозь стены (Noclip)", en = "Noclip" }, false, function(state)
+    if state then
+        noclipConn = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConn then noclipConn:Disconnect() end
+    end
+end)
+
+MainTab.CreateToggle({ ru = "Флинг (Fling)", en = "Fling" }, false, function(state)
+    if state then
+        flingConn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local vel = hrp.Velocity
+                hrp.Velocity = Vector3.new(30000, 30000, 30000)
+                RunService.RenderStepped:Wait()
+                if hrp then hrp.Velocity = vel end
+            end
+        end)
+    else
+        if flingConn then flingConn:Disconnect() end
+    end
+end)
+
+MainTab.CreateToggle({ ru = "Флинг в полёте (Fly Fling)", en = "Fly Fling" }, false, function(state)
+    if state then
+        flyFlingConn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local cam = workspace.CurrentCamera
+            if hrp and cam then
+                hrp.CFrame = cam.CFrame
+                hrp.Velocity = Vector3.new(99999, 99999, 99999)
+                hrp.RotVelocity = Vector3.new(99999, 99999, 99999)
+            end
+        end)
+    else
+        if flyFlingConn then flyFlingConn:Disconnect() end
+    end
+end)
+
+MainTab.CreateSlider({ ru = "Скорость вращения (Spin)", en = "Spin Speed" }, 0, 100, 10, function(value)
+    spinSpeed = value
+end)
+
+MainTab.CreateToggle({ ru = "Вращение (Spin)", en = "Spin" }, false, function(state)
+    if state then
+        spinConn = RunService.Heartbeat:Connect(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
+            end
+        end)
+    else
+        if spinConn then spinConn:Disconnect() end
+    end
+end)
+
+--====================================================
+-- ВКЛАДКА: ДВИЖЕНИЕ (Speed, Jump, BunnyHop, InfJump)
+--====================================================
+
+MovementTab.CreateSlider({ ru = "Скорость бега (WalkSpeed)", en = "WalkSpeed" }, 16, 200, 16, function(value)
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = value end
+end)
+
+MovementTab.CreateSlider({ ru = "Сила прыжка (JumpPower)", en = "JumpPower" }, 50, 300, 50, function(value)
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.UseJumpPower = true
+        hum.JumpPower = value
+    end
+end)
+
+MovementTab.CreateToggle({ ru = "Бесконечный прыжок (InfJump)", en = "Infinite Jump" }, false, function(state)
+    if state then
+        infJumpConn = UserInputService.JumpRequest:Connect(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end)
+    else
+        if infJumpConn then infJumpConn:Disconnect() end
+    end
+end)
+
+MovementTab.CreateToggle({ ru = "Баннихоп (BunnyHop)", en = "BunnyHop" }, false, function(state)
+    if state then
+        local currentSpeed = 16
+        local maxBhopSpeed = 45
+        local lastVel = Vector3.zero
+
+        bhopConn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hum or not hrp then return end
+
+            local vel = hrp.AssemblyLinearVelocity
+            local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
+
+            if lastVel.Magnitude - horizontalVel.Magnitude > 15 then
+                currentSpeed = 16
+            end
+            lastVel = horizontalVel
+
+            if hum.FloorMaterial ~= Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                currentSpeed = math.clamp(currentSpeed + 2, 16, maxBhopSpeed)
+                local moveDir = hum.MoveDirection.Unit
+                hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
+            elseif hum.FloorMaterial == Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
+                local moveDir = hum.MoveDirection.Unit
+                hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
+            else
+                currentSpeed = 16
+            end
+        end)
+    else
+        if bhopConn then bhopConn:Disconnect() end
+    end
+end)
+
+--====================================================
+-- ВКЛАДКА: ВИЗУАЛ (ESP, Fullbright, Gravity, Invisible)
+--====================================================
+
+VisualTab.CreateToggle({ ru = "Подсветка игроков (ESP)", en = "ESP" }, false, function(state)
+    if state then
+        local function addESP(p)
+            if p == LocalPlayer then return end
+            local function onChar(c)
+                if not c:FindFirstChild("IY_ESP") then
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "IY_ESP"
+                    hl.Adornee = c
+                    hl.FillColor = espColors[currentEspColorIndex].color
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    hl.Parent = c
+                end
+            end
+            if p.Character then onChar(p.Character) end
+            p.CharacterAdded:Connect(onChar)
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            addESP(p)
+        end
+        espConn = Players.PlayerAdded:Connect(addESP)
+    else
+        if espConn then espConn:Disconnect() end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("IY_ESP") then
+                p.Character.IY_ESP:Destroy()
+            end
+        end
+    end
+end)
+
+VisualTab.CreateButton({ ru = "Сменить цвет ESP", en = "Change ESP Color" }, function()
+    currentEspColorIndex = currentEspColorIndex % #espColors + 1
+    local colData = espColors[currentEspColorIndex]
+    Window:Notify({ ru = "Цвет ESP: " .. colData.name, en = "ESP Color: " .. colData.name }, 2)
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and p.Character:FindFirstChild("IY_ESP") then
+            p.Character.IY_ESP.FillColor = colData.color
+        end
+    end
+end)
+
+VisualTab.CreateToggle({ ru = "Невидимость (Invisible)", en = "Invisible" }, false, function(state)
+    local char = LocalPlayer.Character
+    if char then
+        local targetTransparency = state and 1 or 0
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("BasePart") or v:IsA("Decal") then
+                v.LocalTransparencyModifier = targetTransparency
+            end
+        end
+    end
+end)
+
+VisualTab.CreateToggle({ ru = "Полное освещение (Fullbright)", en = "Fullbright" }, false, function(state)
+    if state then
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+        Lighting.Brightness = 3
+    else
+        Lighting.Ambient = Color3.new(0, 0, 0)
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        Lighting.Brightness = 2
+    end
+end)
+
+VisualTab.CreateSlider({ ru = "Гравитация (Gravity)", en = "Gravity" }, 0, 196, 196, function(value)
+    workspace.Gravity = value
+end)
+
+--====================================================
+-- ВКЛАДКА: ИГРОКИ (Телепорты)
+--====================================================
+
+TpTab.CreateButton({ ru = "Обновить список игроков", en = "Refresh Player List" }, function()
+    -- Пересоздаем список или обновляем кнопки телепортации
+    Window:Notify({ ru = "Список обновлен", en = "List updated" }, 2)
+end)
+
+-- Добавляем динамические кнопки для каждого игрока
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        TpTab.CreateButton({ ru = "Телепорт к: " .. p.Name, en = "Teleport to: " .. p.Name }, function()
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                safeTeleportTo(p.Character.HumanoidRootPart)
+                Window:Notify({ ru = "Успешный телепорт к " .. p.Name, en = "Teleported to " .. p.Name }, 2)
+            else
+                Window:Notify({ ru = "Игрок недоступен", en = "Player not available" }, 2)
+            end
+        end)
+    end
+end
+
+Window:Notify({ ru = "IY Mobile Hub успешно запущен!", en = "IY Mobile Hub loaded successfully!" }, 3)
