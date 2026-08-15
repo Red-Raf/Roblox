@@ -1,7 +1,7 @@
 --!strict
 
 -- Загрузка библиотеки Rayfield
-local Rayfield: any = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -21,8 +21,8 @@ local Window = Rayfield:CreateWindow({
 		FileName = "UniversalIYHub"
 	},
 	Discord = {
-		Enabled = true,
-		Invite = "yourinvite", -- Вставьте свой инвайт-код Discord (без discord.gg/)
+		Enabled = false,
+		Invite = "yourinvite",
 		RememberJoins = true
 	},
 	KeySystem = false,
@@ -490,3 +490,6 @@ AdminTab:CreateButton({
 		end
 	end,
 })
+
+-- Принудительная загрузка интерфейса Rayfield
+Rayfield:Load()
