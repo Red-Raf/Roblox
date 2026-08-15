@@ -1,14 +1,7 @@
 --!strict
 
--- Загрузка библиотеки ModernUI из вашего репозитория
-local success, ModernUI = pcall(function()
-	return loadstring(game:HttpGet("https://raw.githubusercontent.com/Red-Raf/Roblox/refs/heads/main/ModernUI.lua"))()
-end)
-
-if not success or not ModernUI then
-	warn("Не удалось загрузить ModernUI с GitHub!")
-	return
-end
+-- Загрузка библиотеки Rayfield
+local Rayfield: any = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,230 +10,291 @@ local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 
--- Создание главного окна
-local Window = ModernUI.new({
-	Title = {
-		ru = "Universal IY Hub | ModernUI",
-		en = "Universal IY Hub | ModernUI",
+-- Создание главного окна Rayfield
+local Window = Rayfield:CreateWindow({
+	Name = "Universal IY Hub | Rayfield",
+	LoadingTitle = "Universal IY Hub",
+	LoadingSubtitle = "Загрузка интерфейса...",
+	ConfigurationSaving = {
+		Enabled = false,
+		FolderName = nil,
+		FileName = "UniversalIYHub"
 	},
-	AvatarId = "rbxassetid://6034287525",
-	Language = "ru",
-	ShowErrorsAsToast = true,
-	IncludeSettingsTab = true,
+	Discord = {
+		Enabled = true,
+		Invite = "yourinvite", -- Вставьте свой инвайт-код Discord (без discord.gg/)
+		RememberJoins = true
+	},
+	KeySystem = false,
 })
-
--- Безопасное добавление социальной ссылки, если метод отсутствует в базовой версии
-if not Window.AddSocialLink then
-	function Window:AddSocialLink(name, url)
-		print("[SocialLink] " .. name .. ": " .. url)
-	end
-end
-
-Window:AddSocialLink("Discord", "https://discord.gg/yourinvite")
-Window:AddSocialLink("Telegram", "https://t.me/yourchannel")
 
 --================================================================
 -- Вкладка 1: Игрок (Player)
 --================================================================
-local PlayerTab = Window:CreateTab({ ru = "Игрок", en = "Player" }, "rbxassetid://6031080277")
+local PlayerTab = Window:CreateTab("Игрок", "rbxassetid://6031080277")
 
-PlayerTab.CreateSlider({ ru = "Скорость бега (WalkSpeed)", en = "WalkSpeed" }, 16, 200, 16, function(v)
-	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.WalkSpeed = v end
-end)
+PlayerTab:CreateSlider({
+	Name = "Скорость бега (WalkSpeed)",
+	Range = {16, 200},
+	Increment = 1,
+	Suffix = "",
+	CurrentValue = 16,
+	Flag = "WalkSpeedSlider",
+	Callback = function(v)
+		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum.WalkSpeed = v end
+	end,
+})
 
-PlayerTab.CreateSlider({ ru = "Сила прыжка (JumpPower)", en = "JumpPower" }, 50, 300, 50, function(v)
-	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum.UseJumpPower = true
-		hum.JumpPower = v
-	end
-end)
+PlayerTab:CreateSlider({
+	Name = "Сила прыжка (JumpPower)",
+	Range = {50, 300},
+	Increment = 1,
+	Suffix = "",
+	CurrentValue = 50,
+	Flag = "JumpPowerSlider",
+	Callback = function(v)
+		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.UseJumpPower = true
+			hum.JumpPower = v
+		end
+	end,
+})
 
-local flyConn
-PlayerTab.CreateToggle({ ru = "Полет (Fly)", en = "Fly" }, false, function(state)
-	local char = LocalPlayer.Character
-	if not char then return end
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum then return end
+local flyConn: RBXScriptConnection? = nil
+PlayerTab:CreateToggle({
+	Name = "Полет (Fly)",
+	CurrentValue = false,
+	Flag = "FlyToggle",
+	Callback = function(state)
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hrp or not hum then return end
 
-	if state then
-		local bv = Instance.new("BodyVelocity")
-		bv.Name = "IY_FlyVel"
-		bv.Parent = hrp
-		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-		bv.Velocity = Vector3.zero
+		if state then
+			local bv = Instance.new("BodyVelocity")
+			bv.Name = "IY_FlyVel"
+			bv.Parent = hrp
+			bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			bv.Velocity = Vector3.zero
 
-		local bg = Instance.new("BodyGyro")
-		bg.Name = "IY_FlyGyro"
-		bg.Parent = hrp
-		bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-		bg.P = 1000
+			local bg = Instance.new("BodyGyro")
+			bg.Name = "IY_FlyGyro"
+			bg.Parent = hrp
+			bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+			bg.P = 1000
 
-		hum.PlatformStand = true
+			hum.PlatformStand = true
 
-		flyConn = RunService.RenderStepped:Connect(function()
-			local cam = workspace.CurrentCamera
-			local moveDir = hum.MoveDirection
-			bv.Velocity = moveDir * 50
-			bg.CFrame = cam.CFrame
-		end)
-	else
-		if flyConn then flyConn:Disconnect() end
-		if hum then hum.PlatformStand = false end
-		if hrp:FindFirstChild("IY_FlyVel") then hrp.IY_FlyVel:Destroy() end
-		if hrp:FindFirstChild("IY_FlyGyro") then hrp.IY_FlyGyro:Destroy() end
-	end
-end)
+			flyConn = RunService.RenderStepped:Connect(function()
+				local cam = workspace.CurrentCamera
+				local moveDir = hum.MoveDirection
+				bv.Velocity = moveDir * 50
+				bg.CFrame = cam.CFrame
+			end)
+		else
+			if flyConn then flyConn:Disconnect() end
+			if hum then hum.PlatformStand = false end
+			if hrp:FindFirstChild("IY_FlyVel") then hrp.IY_FlyVel:Destroy() end
+			if hrp:FindFirstChild("IY_FlyGyro") then hrp.IY_FlyGyro:Destroy() end
+		end
+	end,
+})
 
-local noclipConn
-PlayerTab.CreateToggle({ ru = "Хождение сквозь стены (Noclip)", en = "Noclip" }, false, function(state)
-	if state then
-		noclipConn = RunService.Stepped:Connect(function()
-			local char = LocalPlayer.Character
-			if char then
-				for _, part in ipairs(char:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.CanCollide = false
+local noclipConn: RBXScriptConnection? = nil
+PlayerTab:CreateToggle({
+	Name = "Хождение сквозь стены (Noclip)",
+	CurrentValue = false,
+	Flag = "NoclipToggle",
+	Callback = function(state)
+		if state then
+			noclipConn = RunService.Stepped:Connect(function()
+				local char = LocalPlayer.Character
+				if char then
+					for _, part in ipairs(char:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.CanCollide = false
+						end
 					end
 				end
-			end
-		end)
-	else
-		if noclipConn then noclipConn:Disconnect() end
-	end
-end)
+			end)
+		else
+			if noclipConn then noclipConn:Disconnect() end
+		end
+	end,
+})
 
-local infJumpConn
-PlayerTab.CreateToggle({ ru = "Бесконечный прыжок (Infinite Jump)", en = "Infinite Jump" }, false, function(state)
-	if state then
-		infJumpConn = UserInputService.JumpRequest:Connect(function()
-			local char = LocalPlayer.Character
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum:ChangeState(Enum.HumanoidStateType.Jumping)
-			end
-		end)
-	else
-		if infJumpConn then infJumpConn:Disconnect() end
-	end
-end)
+local infJumpConn: RBXScriptConnection? = nil
+PlayerTab:CreateToggle({
+	Name = "Бесконечный прыжок (Infinite Jump)",
+	CurrentValue = false,
+	Flag = "InfJumpToggle",
+	Callback = function(state)
+		if state then
+			infJumpConn = UserInputService.JumpRequest:Connect(function()
+				local char = LocalPlayer.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+			end)
+		else
+			if infJumpConn then infJumpConn:Disconnect() end
+		end
+	end,
+})
 
-PlayerTab.CreateToggle({ ru = "Невидимость (Invisible)", en = "Invisible" }, false, function(state)
-	local char = LocalPlayer.Character
-	if char then
-		local targetTransparency = state and 1 or 0
-		for _, v in ipairs(char:GetDescendants()) do
-			if v:IsA("BasePart") or v:IsA("Decal") then
-				v.LocalTransparencyModifier = targetTransparency
+PlayerTab:CreateToggle({
+	Name = "Невидимость (Invisible)",
+	CurrentValue = false,
+	Flag = "InvisibleToggle",
+	Callback = function(state)
+		local char = LocalPlayer.Character
+		if char then
+			local targetTransparency = state and 1 or 0
+			for _, v in ipairs(char:GetDescendants()) do
+				if v:IsA("BasePart") or v:IsA("Decal") then
+					v.LocalTransparencyModifier = targetTransparency
+				end
 			end
 		end
-	end
-end)
+	end,
+})
 
 --================================================================
 -- Вкладка 2: Функции (Fun / Actions)
 --================================================================
-local FunTab = Window:CreateTab({ ru = "Функции", en = "Fun" }, "rbxassetid://6023426915")
+local FunTab = Window:CreateTab("Функции", "rbxassetid://6023426915")
 
-local flingConn
-FunTab.CreateToggle({ ru = "Флинг (Fling)", en = "Fling" }, false, function(state)
-	if state then
-		flingConn = RunService.Heartbeat:Connect(function()
-			local char = LocalPlayer.Character
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				local vel = hrp.Velocity
-				hrp.Velocity = Vector3.new(30000, 30000, 30000)
-				RunService.RenderStepped:Wait()
-				if hrp then hrp.Velocity = vel end
-			end
-		end)
-	else
-		if flingConn then flingConn:Disconnect() end
-	end
-end)
+local flingConn: RBXScriptConnection? = nil
+FunTab:CreateToggle({
+	Name = "Флинг (Fling)",
+	CurrentValue = false,
+	Flag = "FlingToggle",
+	Callback = function(state)
+		if state then
+			flingConn = RunService.Heartbeat:Connect(function()
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					local vel = hrp.Velocity
+					hrp.Velocity = Vector3.new(30000, 30000, 30000)
+					RunService.RenderStepped:Wait()
+					if hrp then hrp.Velocity = vel end
+				end
+			end)
+		else
+			if flingConn then flingConn:Disconnect() end
+		end
+	end,
+})
 
-local flyFlingConn
-FunTab.CreateToggle({ ru = "Флинг в полете (Fly Fling)", en = "Fly Fling" }, false, function(state)
-	if state then
-		flyFlingConn = RunService.Heartbeat:Connect(function()
-			local char = LocalPlayer.Character
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			local cam = workspace.CurrentCamera
-			if hrp and cam then
-				hrp.CFrame = cam.CFrame
-				hrp.Velocity = Vector3.new(99999, 99999, 99999)
-				hrp.RotVelocity = Vector3.new(99999, 99999, 99999)
-			end
-		end)
-	else
-		if flyFlingConn then flyFlingConn:Disconnect() end
-	end
-end)
+local flyFlingConn: RBXScriptConnection? = nil
+FunTab:CreateToggle({
+	Name = "Флинг в полете (Fly Fling)",
+	CurrentValue = false,
+	Flag = "FlyFlingToggle",
+	Callback = function(state)
+		if state then
+			flyFlingConn = RunService.Heartbeat:Connect(function()
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				local cam = workspace.CurrentCamera
+				if hrp and cam then
+					hrp.CFrame = cam.CFrame
+					hrp.Velocity = Vector3.new(99999, 99999, 99999)
+					hrp.RotVelocity = Vector3.new(99999, 99999, 99999)
+				end
+			end)
+		else
+			if flyFlingConn then flyFlingConn:Disconnect() end
+		end
+	end,
+})
 
 local spinSpeed = 10
-local spinConn
-FunTab.CreateSlider({ ru = "Скорость вращения (Spin Speed)", en = "Spin Speed" }, 0, 100, 10, function(v)
-	spinSpeed = v
-end)
+local spinConn: RBXScriptConnection? = nil
 
-FunTab.CreateToggle({ ru = "Вращение (Spin)", en = "Spin" }, false, function(state)
-	if state then
-		spinConn = RunService.Heartbeat:Connect(function()
-			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
-			end
-		end)
-	else
-		if spinConn then spinConn:Disconnect() end
-	end
-end)
+FunTab:CreateSlider({
+	Name = "Скорость вращения (Spin Speed)",
+	Range = {0, 100},
+	Increment = 1,
+	Suffix = "",
+	CurrentValue = 10,
+	Flag = "SpinSpeedSlider",
+	Callback = function(v)
+		spinSpeed = v
+	end,
+})
 
-local bhopConn
-FunTab.CreateToggle({ ru = "Баннихоп (BunnyHop)", en = "BunnyHop" }, false, function(state)
-	if state then
-		local currentSpeed = 16
-		local maxBhopSpeed = 45
-		local lastVel = Vector3.zero
+FunTab:CreateToggle({
+	Name = "Вращение (Spin)",
+	CurrentValue = false,
+	Flag = "SpinToggle",
+	Callback = function(state)
+		if state then
+			spinConn = RunService.Heartbeat:Connect(function()
+				local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
+				end
+			end)
+		else
+			if spinConn then spinConn:Disconnect() end
+		end
+	end,
+})
 
-		bhopConn = RunService.Heartbeat:Connect(function()
-			local char = LocalPlayer.Character
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			if not hum or not hrp then return end
+local bhopConn: RBXScriptConnection? = nil
+FunTab:CreateToggle({
+	Name = "Баннихоп (BunnyHop)",
+	CurrentValue = false,
+	Flag = "BhopToggle",
+	Callback = function(state)
+		if state then
+			local currentSpeed = 16
+			local maxBhopSpeed = 45
+			local lastVel = Vector3.zero
 
-			local vel = hrp.AssemblyLinearVelocity
-			local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
+			bhopConn = RunService.Heartbeat:Connect(function()
+				local char = LocalPlayer.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				if not hum or not hrp then return end
 
-			if lastVel.Magnitude - horizontalVel.Magnitude > 15 then
-				currentSpeed = 16
-			end
-			lastVel = horizontalVel
+				local vel = hrp.AssemblyLinearVelocity
+				local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
 
-			if hum.FloorMaterial ~= Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
-				hum:ChangeState(Enum.HumanoidStateType.Jumping)
-				currentSpeed = math.clamp(currentSpeed + 2, 16, maxBhopSpeed)
-				local moveDir = hum.MoveDirection.Unit
-				hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
-			elseif hum.FloorMaterial == Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
-				local moveDir = hum.MoveDirection.Unit
-				hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
-			else
-				currentSpeed = 16
-			end
-		end)
-	else
-		if bhopConn then bhopConn:Disconnect() end
-	end
-end)
+				if lastVel.Magnitude - horizontalVel.Magnitude > 15 then
+					currentSpeed = 16
+				end
+				lastVel = horizontalVel
+
+				if hum.FloorMaterial ~= Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
+					hum:ChangeState(Enum.HumanoidStateType.Jumping)
+					currentSpeed = math.clamp(currentSpeed + 2, 16, maxBhopSpeed)
+					local moveDir = hum.MoveDirection.Unit
+					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
+				elseif hum.FloorMaterial == Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
+					local moveDir = hum.MoveDirection.Unit
+					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
+				else
+					currentSpeed = 16
+				end
+			end)
+		else
+			if bhopConn then bhopConn:Disconnect() end
+		end
+	end,
+})
 
 --================================================================
 -- Вкладка 3: Визуалы (Visuals)
 --================================================================
-local VisualsTab = Window:CreateTab({ ru = "Визуалы", en = "Visuals" }, "rbxassetid://6031080277")
+local VisualsTab = Window:CreateTab("Визуалы", "rbxassetid://6031080277")
 
 local espColors = {
 	{name = "Red", color = Color3.fromRGB(255, 0, 0)},
@@ -251,75 +305,99 @@ local espColors = {
 	{name = "White", color = Color3.fromRGB(255, 255, 255)}
 }
 local currentEspColorIndex = 1
-local espConn
+local espConn: RBXScriptConnection? = nil
 
-VisualsTab.CreateToggle({ ru = "ESP Подсветка игроков", en = "Player ESP" }, false, function(state)
-	if state then
-		local function addESP(p)
-			if p == LocalPlayer then return end
-			local function onChar(c)
-				if not c:FindFirstChild("IY_ESP") then
-					local hl = Instance.new("Highlight")
-					hl.Name = "IY_ESP"
-					hl.Adornee = c
-					hl.FillColor = espColors[currentEspColorIndex].color
-					hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-					hl.Parent = c
+VisualsTab:CreateToggle({
+	Name = "ESP Подсветка игроков (Player ESP)",
+	CurrentValue = false,
+	Flag = "ESPToggle",
+	Callback = function(state)
+		if state then
+			local function addESP(p)
+				if p == LocalPlayer then return end
+				local function onChar(c)
+					if not c:FindFirstChild("IY_ESP") then
+						local hl = Instance.new("Highlight")
+						hl.Name = "IY_ESP"
+						hl.Adornee = c
+						hl.FillColor = espColors[currentEspColorIndex].color
+						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+						hl.Parent = c
+					end
+				end
+				if p.Character then onChar(p.Character) end
+				p.CharacterAdded:Connect(onChar)
+			end
+			for _, p in ipairs(Players:GetPlayers()) do
+				addESP(p)
+			end
+			espConn = Players.PlayerAdded:Connect(addESP)
+		else
+			if espConn then espConn:Disconnect() end
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:FindFirstChild("IY_ESP") then
+					p.Character.IY_ESP:Destroy()
 				end
 			end
-			if p.Character then onChar(p.Character) end
-			p.CharacterAdded:Connect(onChar)
 		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			addESP(p)
-		end
-		espConn = Players.PlayerAdded:Connect(addESP)
-	else
-		if espConn then espConn:Disconnect() end
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character and p.Character:FindFirstChild("IY_ESP") then
-				p.Character.IY_ESP:Destroy()
+	end,
+})
+
+VisualsTab:CreateDropdown({
+	Name = "Цвет ESP (ESP Color)",
+	Options = {"Red", "Green", "Blue", "Yellow", "Purple", "White"},
+	CurrentOption = "Red",
+	Flag = "ESPColorDropdown",
+	Callback = function(choice)
+		for i, data in ipairs(espColors) do
+			if data.name == choice then
+				currentEspColorIndex = i
+				break
 			end
 		end
-	end
-end)
-
-VisualsTab.CreateDropdown({ ru = "Цвет ESP", en = "ESP Color" }, { "Red", "Green", "Blue", "Yellow", "Purple", "White" }, "Red", function(choice)
-	for i, data in ipairs(espColors) do
-		if data.name == choice then
-			currentEspColorIndex = i
-			break
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character and p.Character:FindFirstChild("IY_ESP") then
+				p.Character.IY_ESP.FillColor = espColors[currentEspColorIndex].color
+			end
 		end
-	end
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Character and p.Character:FindFirstChild("IY_ESP") then
-			p.Character.IY_ESP.FillColor = espColors[currentEspColorIndex].color
+	end,
+})
+
+VisualsTab:CreateToggle({
+	Name = "Полная яркость (Fullbright)",
+	CurrentValue = false,
+	Flag = "FullbrightToggle",
+	Callback = function(state)
+		if state then
+			Lighting.Ambient = Color3.new(1, 1, 1)
+			Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+			Lighting.Brightness = 3
+		else
+			Lighting.Ambient = Color3.new(0, 0, 0)
+			Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+			Lighting.Brightness = 2
 		end
-	end
-end)
+	end,
+})
 
-VisualsTab.CreateToggle({ ru = "Полная яркость (Fullbright)", en = "Fullbright" }, false, function(state)
-	if state then
-		Lighting.Ambient = Color3.new(1, 1, 1)
-		Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
-		Lighting.Brightness = 3
-	else
-		Lighting.Ambient = Color3.new(0, 0, 0)
-		Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-		Lighting.Brightness = 2
-	end
-end)
-
-VisualsTab.CreateSlider({ ru = "Гравитация (Gravity)", en = "Gravity" }, 0, 196, 196, function(v)
-	workspace.Gravity = v
-end)
+VisualsTab:CreateSlider({
+	Name = "Гравитация (Gravity)",
+	Range = {0, 196},
+	Increment = 1,
+	Suffix = "",
+	CurrentValue = 196,
+	Flag = "GravitySlider",
+	Callback = function(v)
+		workspace.Gravity = v
+	end,
+})
 
 --================================================================
 -- Вкладка 4: Телепорты (Teleports)
 --================================================================
-local TeleportsTab = Window:CreateTab({ ru = "Телепорты", en = "Teleports" }, "rbxassetid://6023426915")
+local TeleportsTab = Window:CreateTab("Телепорты", "rbxassetid://6023426915")
 
-TeleportsTab.CreateLabel({ ru = "Безопасный телепорт к игроку (анти-кик):", en = "Safe teleport to player:" })
+TeleportsTab:CreateLabel("Безопасный телепорт к игроку (анти-кик):")
 
 local function safeTeleportTo(targetPart)
 	local char = LocalPlayer.Character
@@ -342,48 +420,73 @@ for _, p in ipairs(Players:GetPlayers()) do
 	if p ~= LocalPlayer then table.insert(playerNames, p.Name) end
 end
 
-TeleportsTab.CreateDropdown({ ru = "Выбрать игрока", en = "Select player" }, #playerNames > 0 and playerNames or { "Нет игроков" }, playerNames[1] or "Нет игроков", function(choice)
-	local targetPlayer = Players:FindFirstChild(choice)
-	if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-		safeTeleportTo(targetPlayer.Character.HumanoidRootPart)
-		Window:Notify({ ru = "Телепортация к " .. choice, en = "Teleported to " .. choice }, 2)
-	end
-end)
+TeleportsTab:CreateDropdown({
+	Name = "Выбрать игрока",
+	Options = #playerNames > 0 and playerNames or {"Нет игроков"},
+	CurrentOption = playerNames[1] or "Нет игроков",
+	Flag = "PlayerTeleportDropdown",
+	Callback = function(choice)
+		local targetPlayer = Players:FindFirstChild(choice)
+		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			safeTeleportTo(targetPlayer.Character.HumanoidRootPart)
+			Rayfield:Notify({
+				Title = "Телепортация",
+				Content = "Телепортация к " .. choice,
+				Duration = 2,
+				Image = 4483362458
+			})
+		end
+	end,
+})
 
 --================================================================
 -- Вкладка 5: Утилиты (Utilities / Admin)
 --================================================================
-local AdminTab = Window:CreateTab({ ru = "Утилиты", en = "Utilities" }, "rbxassetid://6031080277")
+local AdminTab = Window:CreateTab("Утилиты", "rbxassetid://6031080277")
 
-AdminTab.CreateButton({ ru = "Перезайти на сервер (Rejoin)", en = "Rejoin Server" }, function()
-	TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-end)
+AdminTab:CreateButton({
+	Name = "Перезайти на сервер (Rejoin)",
+	Callback = function()
+		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+	end,
+})
 
-AdminTab.CreateButton({ ru = "Сменить сервер (Server Hop)", en = "Server Hop" }, function()
-	local servers = {}
-	local success, sitedata = pcall(function()
-		return game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
-	end)
-	if success and sitedata and sitedata.data then
-		for _, s in ipairs(sitedata.data) do
-			if type(s) == "table" and s.playing < s.maxPlayers and s.id ~= game.JobId then
-				table.insert(servers, s.id)
+AdminTab:CreateButton({
+	Name = "Сменить сервер (Server Hop)",
+	Callback = function()
+		local servers = {}
+		local success, sitedata = pcall(function()
+			return game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+		end)
+		if success and sitedata and sitedata.data then
+			for _, s in ipairs(sitedata.data) do
+				if type(s) == "table" and s.playing < s.maxPlayers and s.id ~= game.JobId then
+					table.insert(servers, s.id)
+				end
+			end
+			if #servers > 0 then
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LocalPlayer)
+			else
+				Rayfield:Notify({
+					Title = "Ошибка",
+					Content = "Не удалось найти свободный сервер",
+					Duration = 3,
+					Image = 4483362458
+				})
 			end
 		end
-		if #servers > 0 then
-			TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LocalPlayer)
-		else
-			Window:Notify({ ru = "Не удалось найти свободный сервер", en = "Could not find an available server" }, 3)
-		end
-	end
-end)
+	end,
+})
 
-AdminTab.CreateButton({ ru = "Сбросить персонажа (Reset)", en = "Reset Character" }, function()
-	local char = LocalPlayer.Character
-	if char then
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.Health = 0
+AdminTab:CreateButton({
+	Name = "Сбросить персонажа (Reset)",
+	Callback = function()
+		local char = LocalPlayer.Character
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.Health = 0
+			end
 		end
-	end
-end)
+	end,
+})
