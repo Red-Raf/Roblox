@@ -1,5 +1,3 @@
---!strict
-
 -- Загрузка библиотеки Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -10,11 +8,9 @@ local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 
--- Создание главного окна Rayfield
+-- Создание главного окна Rayfield (без экрана загрузки, вызывающего зависание)
 local Window = Rayfield:CreateWindow({
 	Name = "Universal IY Hub | Rayfield",
-	LoadingTitle = "Universal IY Hub",
-	LoadingSubtitle = "Загрузка...",
 	ConfigurationSaving = {
 		Enabled = false,
 		FolderName = nil,
@@ -62,7 +58,7 @@ PlayerTab:CreateSlider({
 	end,
 })
 
-local flyConn: RBXScriptConnection? = nil
+local flyConn = nil
 PlayerTab:CreateToggle({
 	Name = "Полет (Fly)",
 	CurrentValue = false,
@@ -104,7 +100,7 @@ PlayerTab:CreateToggle({
 	end,
 })
 
-local noclipConn: RBXScriptConnection? = nil
+local noclipConn = nil
 PlayerTab:CreateToggle({
 	Name = "Хождение сквозь стены (Noclip)",
 	CurrentValue = false,
@@ -127,7 +123,7 @@ PlayerTab:CreateToggle({
 	end,
 })
 
-local infJumpConn: RBXScriptConnection? = nil
+local infJumpConn = nil
 PlayerTab:CreateToggle({
 	Name = "Бесконечный прыжок (Infinite Jump)",
 	CurrentValue = false,
@@ -169,7 +165,7 @@ PlayerTab:CreateToggle({
 --================================================================
 local FunTab = Window:CreateTab("Функции", "rbxassetid://6023426915")
 
-local flingConn: RBXScriptConnection? = nil
+local flingConn = nil
 FunTab:CreateToggle({
 	Name = "Флинг (Fling)",
 	CurrentValue = false,
@@ -192,7 +188,7 @@ FunTab:CreateToggle({
 	end,
 })
 
-local flyFlingConn: RBXScriptConnection? = nil
+local flyFlingConn = nil
 FunTab:CreateToggle({
 	Name = "Флинг в полете (Fly Fling)",
 	CurrentValue = false,
@@ -216,7 +212,7 @@ FunTab:CreateToggle({
 })
 
 local spinSpeed = 10
-local spinConn: RBXScriptConnection? = nil
+local spinConn = nil
 
 FunTab:CreateSlider({
 	Name = "Скорость вращения (Spin Speed)",
@@ -248,7 +244,7 @@ FunTab:CreateToggle({
 	end,
 })
 
-local bhopConn: RBXScriptConnection? = nil
+local bhopConn = nil
 FunTab:CreateToggle({
 	Name = "Баннихоп (BunnyHop)",
 	CurrentValue = false,
@@ -305,7 +301,7 @@ local espColors = {
 	{name = "White", color = Color3.fromRGB(255, 255, 255)}
 }
 local currentEspColorIndex = 1
-local espConn: RBXScriptConnection? = nil
+local espConn = nil
 
 VisualsTab:CreateToggle({
 	Name = "ESP Подсветка игроков (Player ESP)",
