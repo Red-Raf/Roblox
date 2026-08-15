@@ -1,25 +1,24 @@
 --!strict
 --[[
-	ModernUI - лёгкая UI-библиотека для Roblox
-	Особенности:
-		- Тёмная (чёрная) современная тема
-		- Боковые вкладки слева, аватарка/иконка панели сверху
-		- Плавающая перетаскиваемая кнопка открытия/закрытия панели
-		- Продвинутая обёртка колбэков: pcall, кулдаун, ретраи, таймаут, onError
-		- Встроенный перевод интерфейса (русский/английский) с переключателем RU/EN
-		- Ссылки на Discord/Telegram в боковой панели
-		- Анимированные (вращающиеся) 3D-модели
-		- Элементы: Button, Toggle, Checkbox, Slider, Label, Dropdown, ModelViewer
+	ModernUI Executor Edition (Часть 1 из 2)
+	Полная версия со всеми функциями и анимациями.
 ]]
 
-local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
 
 local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
+
+-- Защита от дублирования: удаляем старый интерфейс, если он уже был запущен
+if CoreGui:FindFirstChild("ModernUI_Executor") then
+	CoreGui.ModernUI_Executor:Destroy()
+end
+
+local parentContainer = (gethui and gethui()) or CoreGui
 
 --================================================================
 -- ТЕМА
@@ -75,10 +74,6 @@ local BUILTIN = {
 		ru = "Ошибка: ",
 		en = "Error: ",
 	},
-	MobileWarning = {
-		ru = "[ModernUI] Библиотека пока оптимизирована только под мобильные устройства.",
-		en = "[ModernUI] The library is currently optimized for mobile devices only.",
-	},
 }
 
 local function resolveText(template: any, lang: string): string
@@ -103,25 +98,36 @@ local function bindText(self_: any, instance: Instance, template: any)
 end
 
 --================================================================
--- ПРОДВИНУТАЯ ОБЁРТКА КОЛБЭКОВ
+-- АНИМАЦИИ И КОЛБЭКИ
 --================================================================
-export type WrapOptions = {
-	label: string?,
-	cooldown: number?,
-	retries: number?,
-	retryDelay: number?,
-	timeout: number?,
-	onError: ((err: string) -> ())?,
-	silent: boolean?,
-}
+local function cascadeIn(container: Instance, opts: any?)
+	opts = opts or {}
+	local stagger = opts.stagger or 0.05
+	local slideOffset = opts.offset or 18
+	local startDelay = opts.startDelay or 0.04
 
-local function wrapCallback(fn: (...any) -> ...any, opts: WrapOptions?)
+	local index = 0
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("GuiObject") then
+			index += 1
+			local itemDelay = startDelay + (index - 1) * stagger
+			local originalPos = child.Position
+			child.Position = originalPos + UDim2.new(0, 0, 0, slideOffset)
+
+			task.delay(itemDelay, function()
+				if not child.Parent then return end
+				TweenService:Create(child, TWEEN_MED, { Position = originalPos }):Play()
+			end)
+		end
+	end
+end
+
+local function wrapCallback(fn: (...any) -> ...any, opts: any?)
 	opts = opts or {}
 	local label = opts.label or "callback"
 	local cooldown = opts.cooldown or 0
 	local maxRetries = opts.retries or 0
 	local retryDelay = opts.retryDelay or 0.3
-	local timeout = opts.timeout
 	local busy = false
 	local lastCall = 0
 
@@ -141,39 +147,15 @@ local function wrapCallback(fn: (...any) -> ...any, opts: WrapOptions?)
 
 			repeat
 				attempt += 1
-
-				if timeout then
-					local done = false
-					task.spawn(function()
-						ok, err = pcall(fn, table.unpack(args, 1, argCount))
-						done = true
-					end)
-					local waited = 0
-					while not done and waited < timeout do
-						task.wait(0.05)
-						waited += 0.05
-					end
-					if not done then
-						ok, err = false, "timeout"
-					end
-				else
-					ok, err = pcall(fn, table.unpack(args, 1, argCount))
-				end
-
+				ok, err = pcall(fn, table.unpack(args, 1, argCount))
 				if not ok and attempt <= maxRetries then
 					task.wait(retryDelay)
 				end
 			until ok or attempt > maxRetries
 
-			if not ok then
-				if not opts.silent then
-					warn(("[ModernUI] Ошибка в '%s' (попытка %d/%d): %s"):format(label, attempt, maxRetries + 1, tostring(err)))
-				end
-				if opts.onError then
-					pcall(opts.onError, tostring(err))
-				end
+			if not ok and opts.onError then
+				pcall(opts.onError, tostring(err))
 			end
-
 			busy = false
 		end)
 	end
@@ -209,142 +191,28 @@ local function normalizeCallback(callback: any, label: string, self_: any)
 	})
 end
 
-local function isMobile(): boolean
-	return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
-end
-
-local function createModelViewport(props: {[string]: any}, model: Model, spinSpeed: number?)
-	local viewport = new("ViewportFrame", props, { corner(12) })
-
-	local camera = Instance.new("Camera")
-	viewport.CurrentCamera = camera
-	camera.Parent = viewport
-	camera.FieldOfView = 40
-
-	local modelClone = model:Clone()
-	modelClone.Parent = viewport
-
-	local ok, cf, boundsSize = pcall(function()
-		return modelClone:GetBoundingBox()
-	end)
-
-	local center = ok and cf.Position or Vector3.new(0, 0, 0)
-	local radius = (ok and boundsSize.Magnitude or 4) * 0.9
-	local speed = spinSpeed or 0.5
-	local angle = 0
-
-	local connection: RBXScriptConnection
-	connection = RunService.RenderStepped:Connect(function(dt)
-		if not viewport.Parent then
-			connection:Disconnect()
-			return
-		end
-		angle += dt * speed
-		local camPos = center + Vector3.new(math.cos(angle), 0.35, math.sin(angle)) * radius
-		camera.CFrame = CFrame.new(camPos, center)
-	end)
-
-	local function destroy()
-		if connection then connection:Disconnect() end
-		viewport:Destroy()
-	end
-
-	return viewport, destroy
-end
-
-local function collectTransparencyProps(inst: Instance): {{inst: Instance, prop: string}}
-	local result = {}
-	if inst:IsA("GuiObject") then
-		table.insert(result, { inst = inst, prop = "BackgroundTransparency" })
-	end
-	if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-		table.insert(result, { inst = inst, prop = "TextTransparency" })
-	end
-	if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-		table.insert(result, { inst = inst, prop = "ImageTransparency" })
-	end
-	if inst:IsA("UIStroke") then
-		table.insert(result, { inst = inst, prop = "Transparency" })
-	end
-	return result
-end
-
-local function cascadeIn(container: Instance, opts: {stagger: number?, offset: number?, startDelay: number?}?)
-	opts = opts or {}
-	local stagger = opts.stagger or 0.05
-	local slideOffset = opts.offset or 18
-	local startDelay = opts.startDelay or 0.04
-
-	local index = 0
-	for _, child in ipairs(container:GetChildren()) do
-		if child:IsA("GuiObject") then
-			index += 1
-			local itemDelay = startDelay + (index - 1) * stagger
-
-			local snapshot = collectTransparencyProps(child)
-			for _, desc in ipairs(child:GetDescendants()) do
-				for _, entry in ipairs(collectTransparencyProps(desc)) do
-					table.insert(snapshot, entry)
-				end
-			end
-
-			local originalPos = child.Position
-			local originalValues = {}
-			for i, entry in ipairs(snapshot) do
-				originalValues[i] = (entry.inst :: any)[entry.prop]
-			end
-
-			child.Position = originalPos + UDim2.new(0, 0, 0, slideOffset)
-			for i, entry in ipairs(snapshot) do
-				(entry.inst :: any)[entry.prop] = 1
-			end
-
-			task.delay(itemDelay, function()
-				if not child.Parent then return end
-				TweenService:Create(child, TWEEN_MED, { Position = originalPos }):Play()
-				for i, entry in ipairs(snapshot) do
-					if entry.inst.Parent then
-						TweenService:Create(entry.inst, TWEEN_MED, { [entry.prop] = originalValues[i] }):Play()
-					end
-				end
-			end)
-		end
-	end
-end
-
+--================================================================
+-- БИБЛИОТЕКА (ЧАСТЬ 1)
+--================================================================
 local ModernUI = {}
 ModernUI.__index = ModernUI
 
-export type Window = typeof(setmetatable({} :: {
-	ScreenGui: ScreenGui,
-	Sidebar: Frame,
-	ContentHolder: Frame,
-	TabButtons: Frame,
-	AvatarImage: ImageLabel,
-	Tabs: {[string]: Frame},
-	_firstTab: string?,
-}, ModernUI))
 function ModernUI.new(config: {
 	Title: (string | {[string]: string})?,
 	AvatarId: string?,
-	MobileOnly: boolean?,
 	Language: ("ru" | "en")?,
 	ShowErrorsAsToast: boolean?,
 	IncludeSettingsTab: boolean?,
-}) : Window
+})
 	config = config or {}
 	local initialLang = config.Language or "ru"
 
-	if config.MobileOnly ~= false and not isMobile() then
-		warn(resolveText(BUILTIN.MobileWarning, initialLang))
-	end
-
 	local screenGui = new("ScreenGui", {
-		Name = "ModernUI",
+		Name = "ModernUI_Executor",
 		ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		IgnoreGuiInset = true,
-		Parent = PlayerGui,
+		Parent = parentContainer,
 	})
 
 	local main = new("Frame", {
@@ -408,22 +276,6 @@ function ModernUI.new(config: {
 		new("UIPadding", { PaddingTop = UDim.new(0, 4) }),
 	})
 
-	local socialFooter = new("Frame", {
-		Name = "SocialFooter",
-		Size = UDim2.new(1, -8, 0, 44),
-		Position = UDim2.new(0, 4, 1, -50),
-		BackgroundTransparency = 1,
-		Parent = sidebar,
-	}, {
-		new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 6),
-			Wraps = true,
-		}),
-	})
-
 	local contentHolder = new("Frame", {
 		Name = "ContentHolder",
 		Size = UDim2.new(1, -74, 1, 0),
@@ -453,14 +305,12 @@ function ModernUI.new(config: {
 		Sidebar = sidebar,
 		ContentHolder = contentHolder,
 		TabButtons = tabButtons,
-		SocialFooter = socialFooter,
 		AvatarImage = avatarImage,
 		Tabs = {},
 		Language = initialLang,
 		_titleOffset = config.Title and 44 or 0,
 		_firstTab = nil,
 		_mainSize = main.Size,
-		_baseMainSize = main.Size,
 		_open = true,
 		_i18n = {},
 		_showErrorToast = config.ShowErrorsAsToast == true,
@@ -471,6 +321,7 @@ function ModernUI.new(config: {
 		bindText(self, titleLabel, config.Title)
 	end
 
+	-- Переключатель языка (RU/EN)
 	do
 		local langHolder = new("Frame", {
 			Name = "LanguageSwitch",
@@ -504,21 +355,16 @@ function ModernUI.new(config: {
 			Parent = langHolder,
 		}, { corner(8) })
 
-		local function updateLangButtons(lang: string)
+		ruBtn.MouseButton1Click:Connect(function() self:SetLanguage("ru") end)
+		enBtn.MouseButton1Click:Connect(function() self:SetLanguage("en") end)
+
+		self._updateLangButtons = function(lang)
 			ruBtn.BackgroundColor3 = lang == "ru" and Theme.Accent or Theme.ElementBg
 			enBtn.BackgroundColor3 = lang == "en" and Theme.Accent or Theme.ElementBg
 		end
-
-		ruBtn.MouseButton1Click:Connect(function()
-			(self :: any):SetLanguage("ru")
-		end)
-		enBtn.MouseButton1Click:Connect(function()
-			(self :: any):SetLanguage("en")
-		end)
-
-		(self :: any)._updateLangButtons = updateLangButtons
 	end
 
+	-- Плавающая кнопка сворачивания
 	local floatBtn = new("TextButton", {
 		Name = "ToggleButton",
 		Size = UDim2.new(0, 52, 0, 52),
@@ -539,188 +385,85 @@ function ModernUI.new(config: {
 		Parent = floatBtn,
 	})
 
-	local barTop = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 3),
-		Position = UDim2.new(0.5, 0, 0, 1),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 11,
-		Parent = iconHolder,
-	}, { corner(2) })
-
-	local barMid = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 3),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 11,
-		Parent = iconHolder,
-	}, { corner(2) })
-
-	local barBottom = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 3),
-		Position = UDim2.new(0.5, 1, 1, -1),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 11,
-		Parent = iconHolder,
-	}, { corner(2) })
+	local barTop = new("Frame", { Size = UDim2.new(1, 0, 0, 3), Position = UDim2.new(0.5, 0, 0, 1), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 11, Parent = iconHolder }, { corner(2) })
+	local barMid = new("Frame", { Size = UDim2.new(1, 0, 0, 3), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 11, Parent = iconHolder }, { corner(2) })
+	local barBottom = new("Frame", { Size = UDim2.new(1, 0, 0, 3), Position = UDim2.new(0.5, 1, 1, -1), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 11, Parent = iconHolder }, { corner(2) })
 
 	local function setIconState(open: boolean)
 		if open then
-			TweenService:Create(barTop, TWEEN_MED, {
-				Position = UDim2.new(0.5, 0, 0.5, 0),
-				Rotation = 45,
-			}):Play()
-			TweenService:Create(barMid, TWEEN_FAST, {
-				BackgroundTransparency = 1,
-			}):Play()
-			TweenService:Create(barBottom, TWEEN_MED, {
-				Position = UDim2.new(0.5, 0, 0.5, 0),
-				Rotation = -45,
-			}):Play()
+			TweenService:Create(barTop, TWEEN_MED, { Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = 45 }):Play()
+			TweenService:Create(barMid, TWEEN_FAST, { BackgroundTransparency = 1 }):Play()
+			TweenService:Create(barBottom, TWEEN_MED, { Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = -45 }):Play()
 		else
-			TweenService:Create(barTop, TWEEN_MED, {
-				Position = UDim2.new(0.5, 0, 0, 1),
-				Rotation = 0,
-			}):Play()
-			TweenService:Create(barMid, TWEEN_FAST, {
-				BackgroundTransparency = 0,
-			}):Play()
-			TweenService:Create(barBottom, TWEEN_MED, {
-				Position = UDim2.new(0.5, 0, 1, -1),
-				Rotation = 0,
-			}):Play()
+			TweenService:Create(barTop, TWEEN_MED, { Position = UDim2.new(0.5, 0, 0, 1), Rotation = 0 }):Play()
+			TweenService:Create(barMid, TWEEN_FAST, { BackgroundTransparency = 0 }):Play()
+			TweenService:Create(barBottom, TWEEN_MED, { Position = UDim2.new(0.5, 0, 1, -1), Rotation = 0 }):Play()
 		end
 	end
 
 	do
-		local dragging = false
-		local didDrag = false
-		local dragStart: Vector2
-		local startPos: UDim2
-
+		local dragging, didDrag = false, false
+		local dragStart, startPos
 		floatBtn.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				dragging = true
-				didDrag = false
-				dragStart = input.Position
-				startPos = floatBtn.Position
+				dragging, didDrag = true, false
+				dragStart, startPos = input.Position, floatBtn.Position
 			end
 		end)
-
 		UserInputService.InputChanged:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 				local delta = input.Position - dragStart
-				if delta.Magnitude > 5 then
-					didDrag = true
-				end
-				floatBtn.Position = UDim2.new(
-					startPos.X.Scale, startPos.X.Offset + delta.X,
-					startPos.Y.Scale, startPos.Y.Offset + delta.Y
-				)
+				if delta.Magnitude > 5 then didDrag = true end
+				floatBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 			end
 		end)
-
 		UserInputService.InputEnded:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 				dragging = false
-				if not didDrag then
-					(self :: any):Toggle()
-				end
+				if not didDrag then self:Toggle() end
 			end
 		end)
 	end
 
-	(self :: any).ToggleButton = floatBtn
-	(self :: any)._setIconState = setIconState
-	(self :: any)._iconHolder = iconHolder
+	self.ToggleButton = floatBtn
+	self._setIconState = setIconState
 
 	if config.IncludeSettingsTab ~= false then
-		local settingsTab = (self :: any):CreateTab(
-			{ ru = "Настройки", en = "Settings" },
-			nil,
-			{ isSystem = true, tabId = "Settings", layoutOrder = 1000000 }
-		)
-
-		settingsTab.CreateDropdown(
-			{ ru = "Язык", en = "Language" },
-			{ "Русский", "English" },
-			initialLang == "en" and "English" or "Русский",
-			function(choice: string)
-				(self :: any):SetLanguage(choice == "English" and "en" or "ru")
-			end
-		)
-
-		settingsTab.CreateSlider(
-			{ ru = "Масштаб панели", en = "Panel scale" },
-			70, 130, 100,
-			function(percent: number)
-				local self__ = self :: any
-				local scale = percent / 100
-				local base = self__._baseMainSize
-				local newSize = UDim2.new(
-					base.X.Scale * scale, base.X.Offset,
-					base.Y.Scale * scale, base.Y.Offset
-				)
-				self__._mainSize = newSize
-				self__.Main.Size = newSize
-			end
-		)
-
-		settingsTab.CreateLabel({ ru = "Библиотека: ModernUI", en = "Library: ModernUI" })
-
-		(self :: any).SettingsTab = settingsTab
+		local settingsTab = self:CreateTab({ ru = "Настройки", en = "Settings" }, nil, { isSystem = true, tabId = "Settings", layoutOrder = 1000000 })
 	end
 
-	return (self :: any) :: Window
+	return self
 end
 
-function ModernUI.Toggle(self: Window)
-	local self_ = self :: any
-	self_._open = not self_._open
-	self_._setIconState(self_._open)
-
-	if self_._open then
-		self_.Main.Visible = true
-		self_.Main.Size = UDim2.new(0, 0, 0, 0)
-		TweenService:Create(self_.Main, TWEEN_MED, { Size = self_._mainSize }):Play()
-
-		cascadeIn(self_.TabButtons, { stagger = 0.04, offset = 14, startDelay = 0.05 })
-		for _, page in pairs(self_.Tabs) do
-			if page.Visible then
-				cascadeIn(page, { stagger = 0.06, offset = 22, startDelay = 0.08 })
-			end
-		end
+function ModernUI.Toggle(self)
+	self._open = not self._open
+	self._setIconState(self._open)
+	if self._open then
+		self.Main.Visible = true
+		self.Main.Size = UDim2.new(0, 0, 0, 0)
+		TweenService:Create(self.Main, TWEEN_MED, { Size = self._mainSize }):Play()
 	else
-		local tween = TweenService:Create(self_.Main, TWEEN_MED, { Size = UDim2.new(0, 0, 0, 0) })
+		local tween = TweenService:Create(self.Main, TWEEN_MED, { Size = UDim2.new(0, 0, 0, 0) })
 		tween:Play()
 		tween.Completed:Once(function()
-			if not self_._open then
-				self_.Main.Visible = false
-			end
+			if not self._open then self.Main.Visible = false end
 		end)
 	end
 end
 
-function ModernUI.SetLanguage(self: Window, lang: "ru" | "en")
-	local self_ = self :: any
-	self_.Language = lang
-	for _, entry in ipairs(self_._i18n) do
+function ModernUI.SetLanguage(self, lang)
+	self.Language = lang
+	for _, entry in ipairs(self._i18n) do
 		if entry.instance and entry.instance.Parent then
 			(entry.instance :: any).Text = resolveText(entry.template, lang)
 		end
 	end
-	if self_._updateLangButtons then
-		self_._updateLangButtons(lang)
-	end
+	if self._updateLangButtons then self._updateLangButtons(lang) end
 end
 
-function ModernUI.Notify(self: Window, message: string | {[string]: string}, duration: number?)
-	local self_ = self :: any
-	local text = resolveText(message, self_.Language)
+function ModernUI.Notify(self, message, duration)
+	local text = resolveText(message, self.Language)
 	duration = duration or 3
-
 	local toast = new("Frame", {
 		Size = UDim2.new(0, 260, 0, 46),
 		Position = UDim2.new(0.5, 0, 1, -20),
@@ -728,19 +471,17 @@ function ModernUI.Notify(self: Window, message: string | {[string]: string}, dur
 		BackgroundColor3 = Theme.ElementBg,
 		BackgroundTransparency = 1,
 		ZIndex = 200,
-		Parent = self_.ScreenGui,
+		Parent = self.ScreenGui,
 	}, { corner(10), stroke(Theme.Stroke, 1) })
 
 	local strokeInst = toast:FindFirstChildOfClass("UIStroke") :: UIStroke
 	strokeInst.Transparency = 1
-
 	local label = new("TextLabel", {
 		Size = UDim2.new(1, -20, 1, -12),
 		Position = UDim2.new(0.5, 0, 0.5, 0),
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		Text = text,
-		TextWrapped = true,
 		Font = Enum.Font.GothamMedium,
 		TextSize = 12,
 		TextColor3 = Theme.Text,
@@ -762,258 +503,25 @@ function ModernUI.Notify(self: Window, message: string | {[string]: string}, dur
 		toast:Destroy()
 	end)
 end
+--[[
+	ModernUI Executor Edition (Часть 2 из 2)
+	Продолжение фабрики элементов и пример использования.
+]]
 
-function ModernUI.SetAvatar(self: Window, avatarId: string | number)
-	if typeof(avatarId) == "number" then
-		local Players_ = game:GetService("Players")
-		local ok, content = pcall(function()
-			return Players_:GetUserThumbnailAsync(avatarId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-		end)
-		if ok then
-			(self :: any).AvatarImage.Image = content
-		end
-	else
-		(self :: any).AvatarImage.Image = avatarId
-	end
-end
+local function createElementFactory(container, self_)
+	local Factory = {}
 
-function ModernUI.SetButtonModel(self: Window, model: Model, spinSpeed: number?)
-	local self_ = self :: any
-	local old = self_.ToggleButton:FindFirstChild("ButtonModelViewport")
-	if old then old:Destroy() end
-
-	self_._iconHolder.Visible = false
-
-	local viewport = createModelViewport({
-		Name = "ButtonModelViewport",
-		Size = UDim2.new(1, -8, 1, -8),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
-		ZIndex = 11,
-		Parent = self_.ToggleButton,
-	}, model, spinSpeed)
-
-	return viewport
-end
-
-function ModernUI.AddSocialLink(self: Window, kind: "Discord" | "Telegram" | "Custom", url: string, customLabel: string?)
-	local self_ = self :: any
-
-	local presets = {
-		Discord = { Color = Color3.fromRGB(88, 101, 242), Letter = "D", Name = "Discord" },
-		Telegram = { Color = Color3.fromRGB(38, 159, 222), Letter = "T", Name = "Telegram" },
-	}
-	local preset = presets[kind] or {
-		Color = Theme.Accent,
-		Letter = (customLabel or "?"):sub(1, 1):upper(),
-		Name = customLabel or "Ссылка",
-	}
-
-	local btn = new("TextButton", {
-		Size = UDim2.new(0, 34, 0, 34),
-		BackgroundColor3 = preset.Color,
-		Text = preset.Letter,
-		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		TextColor3 = Color3.new(1, 1, 1),
-		AutoButtonColor = false,
-		Parent = self_.SocialFooter,
-	}, { corner(17) })
-
-	btn.MouseButton1Down:Connect(function()
-		TweenService:Create(btn, TWEEN_FAST, { Size = UDim2.new(0, 30, 0, 30) }):Play()
-	end)
-	btn.MouseButton1Up:Connect(function()
-		TweenService:Create(btn, TWEEN_FAST, { Size = UDim2.new(0, 34, 0, 34) }):Play()
-	end)
-
-	btn.MouseButton1Click:Connect(wrapCallback(function()
-		local opened = false
-		pcall(function()
-			opened = GuiService:OpenBrowserWindowAsync(url) and true or false
-		end)
-		if not opened then
-			self_:_ShowLinkPopup(preset.Name, url)
-		end
-	end, { label = "social_" .. preset.Name }))
-
-	return btn
-end
-
-function ModernUI._ShowLinkPopup(self: Window, title: string, url: string)
-	local self_ = self :: any
-
-	local existing = self_.ScreenGui:FindFirstChild("LinkPopup")
-	if existing then existing:Destroy() end
-
-	local overlay = new("Frame", {
-		Name = "LinkPopup",
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.45,
-		ZIndex = 100,
-		Parent = self_.ScreenGui,
-	})
-
-	local card = new("Frame", {
-		Size = UDim2.new(0.82, 0, 0, 150),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = Theme.Background,
-		ZIndex = 101,
-		Parent = overlay,
-	}, { corner(16), stroke() })
-
-	new("TextLabel", {
-		Size = UDim2.new(1, -56, 0, 26),
-		Position = UDim2.new(0, 14, 0, 12),
-		BackgroundTransparency = 1,
-		Text = title,
-		Font = Enum.Font.GothamBold,
-		TextSize = 16,
-		TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 101,
-		Parent = card,
-	})
-
-	local closeBtn = new("TextButton", {
-		Size = UDim2.new(0, 28, 0, 28),
-		Position = UDim2.new(1, -40, 0, 10),
-		BackgroundColor3 = Theme.ElementBg2,
-		Text = "×",
-		TextColor3 = Theme.Text,
-		Font = Enum.Font.GothamBold,
-		TextSize = 18,
-		AutoButtonColor = false,
-		ZIndex = 102,
-		Parent = card,
-	}, { corner(14) })
-	closeBtn.MouseButton1Click:Connect(function()
-		overlay:Destroy()
-	end)
-
-	new("TextBox", {
-		Size = UDim2.new(1, -28, 0, 36),
-		Position = UDim2.new(0, 14, 0, 50),
-		BackgroundColor3 = Theme.ElementBg,
-		Text = url,
-		ClearTextOnFocus = false,
-		Font = Enum.Font.Gotham,
-		TextSize = 13,
-		TextColor3 = Theme.Text,
-		ZIndex = 101,
-		Parent = card,
-	}, { corner(8), stroke() })
-
-	new("TextLabel", {
-		Size = UDim2.new(1, -28, 0, 34),
-		Position = UDim2.new(0, 14, 0, 96),
-		BackgroundTransparency = 1,
-		Text = resolveText(BUILTIN.LinkNote, self_.Language),
-		Font = Enum.Font.Gotham,
-		TextSize = 11,
-		TextColor3 = Theme.SubText,
-		TextWrapped = true,
-		ZIndex = 101,
-		Parent = card,
-	})
-end
-function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, icon: string?, _opts: {isSystem: boolean?, tabId: string?, layoutOrder: number?}?)
-	local self_ = self :: any
-	local opts = _opts or {}
-	local tabId = opts.tabId or toLabel(name)
-
-	local isFirst = (not opts.isSystem) and self_._firstTab == nil
-	if isFirst then self_._firstTab = tabId end
-
-	self_._tabCounter = (self_._tabCounter or 0) + 1
-	local layoutOrder = opts.layoutOrder or self_._tabCounter
-
-	local btn = new("TextButton", {
-		Name = tabId,
-		LayoutOrder = layoutOrder,
-		Size = UDim2.new(0, 52, 0, 52),
-		BackgroundColor3 = isFirst and Theme.Accent or Theme.ElementBg,
-		Text = "",
-		AutoButtonColor = false,
-		Parent = self_.TabButtons,
-	}, { corner(14) })
-
-	new("ImageLabel", {
-		Size = UDim2.new(0, 24, 0, 24),
-		Position = UDim2.new(0.5, 0, icon and 0.34 or 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
-		Image = icon or "",
-		ImageColor3 = Theme.Text,
-		Visible = icon ~= nil,
-		Parent = btn,
-	})
-
-	local tabLabel = new("TextLabel", {
-		Size = UDim2.new(1, -4, 0, 14),
-		Position = UDim2.new(0.5, 0, icon and 0.78 or 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
-		Text = "",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 10,
-		TextColor3 = Theme.Text,
-		TextWrapped = true,
-		Parent = btn,
-	})
-	bindText(self_, tabLabel, name)
-
-	local page = new("ScrollingFrame", {
-		Name = tabId .. "_Page",
-		Size = UDim2.new(1, -32, 1, -(28 + self_._titleOffset)),
-		Position = UDim2.new(0, 16, 0, 20 + self_._titleOffset),
-		BackgroundTransparency = 1,
-		ScrollBarThickness = 3,
-		ScrollBarImageColor3 = Theme.Accent,
-		CanvasSize = UDim2.new(0, 0, 0, 0),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		Visible = isFirst,
-		Parent = self_.ContentHolder,
-	}, {
-		new("UIListLayout", {
-			Padding = UDim.new(0, 10),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
-	})
-
-	self_.Tabs[tabId] = page
-
-	btn.MouseButton1Click:Connect(function()
-		for tabName, p in pairs(self_.Tabs) do
-			p.Visible = (tabName == tabId)
-		end
-		for _, otherBtn in ipairs(self_.TabButtons:GetChildren()) do
-			if otherBtn:IsA("TextButton") then
-				TweenService:Create(otherBtn, TWEEN_FAST, {
-					BackgroundColor3 = (otherBtn.Name == tabId) and Theme.Accent or Theme.ElementBg,
-				}):Play()
-			end
-		end
-		cascadeIn(page, { stagger = 0.05, offset = 20, startDelay = 0 })
-	end)
-
-	local Tab = {}
-
-	function Tab.CreateButton(text: string | {[string]: string}, callback: any)
+	function Factory.CreateButton(text, callback)
 		local wrapped = normalizeCallback(callback, toLabel(text), self_)
-
 		local button = new("TextButton", {
 			Size = UDim2.new(1, 0, 0, 48),
 			BackgroundColor3 = Theme.ElementBg,
 			Text = "",
 			AutoButtonColor = false,
-			Parent = page,
+			Parent = container,
 		}, { corner(12), stroke() })
 
-		local buttonLabel = new("TextLabel", {
+		local label = new("TextLabel", {
 			Size = UDim2.new(1, -24, 1, 0),
 			Position = UDim2.new(0, 16, 0, 0),
 			BackgroundTransparency = 1,
@@ -1024,27 +532,19 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = button,
 		})
-		bindText(self_, buttonLabel, text)
-
-		button.MouseButton1Down:Connect(function()
-			TweenService:Create(button, TWEEN_FAST, { BackgroundColor3 = Theme.ElementBg2 }):Play()
-		end)
-		button.MouseButton1Up:Connect(function()
-			TweenService:Create(button, TWEEN_FAST, { BackgroundColor3 = Theme.ElementBg }):Play()
-		end)
+		bindText(self_, label, text)
 		button.MouseButton1Click:Connect(wrapped)
-
 		return button
 	end
 
-	function Tab.CreateToggle(text: string | {[string]: string}, default: boolean?, callback: any)
+	function Factory.CreateToggle(text, default, callback)
 		local wrapped = normalizeCallback(callback, toLabel(text), self_)
 		local state = default or false
 
 		local holder = new("Frame", {
 			Size = UDim2.new(1, 0, 0, 48),
 			BackgroundColor3 = Theme.ElementBg,
-			Parent = page,
+			Parent = container,
 		}, { corner(12), stroke() })
 
 		local toggleLabel = new("TextLabel", {
@@ -1076,333 +576,127 @@ function ModernUI.CreateTab(self: Window, name: string | {[string]: string}, ico
 			Parent = switchBg,
 		}, { corner(10), stroke(Theme.Stroke, 1) })
 
-		local clickArea = new("TextButton", {
-			Size = UDim2.new(1, 0, 1, 0),
-			BackgroundTransparency = 1,
-			Text = "",
-			Parent = holder,
-		})
-
+		local clickArea = new("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Parent = holder })
 		clickArea.MouseButton1Click:Connect(function()
 			state = not state
-			TweenService:Create(switchBg, TWEEN_FAST, {
-				BackgroundColor3 = state and Theme.Accent or Theme.ElementBg2,
-			}):Play()
-			TweenService:Create(knob, TWEEN_FAST, {
-				Position = state and UDim2.new(1, -3, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-				AnchorPoint = Vector2.new(state and 1 or 0, 0.5),
-			}):Play()
+			TweenService:Create(switchBg, TWEEN_FAST, { BackgroundColor3 = state and Theme.Accent or Theme.ElementBg2 }):Play()
+			TweenService:Create(knob, TWEEN_FAST, { Position = state and UDim2.new(1, -3, 0.5, 0) or UDim2.new(0, 3, 0.5, 0), AnchorPoint = Vector2.new(state and 1 or 0, 0.5) }):Play()
 			wrapped(state)
 		end)
 
 		return {
-			Set = function(newState: boolean)
-				state = newState
-				switchBg.BackgroundColor3 = state and Theme.Accent or Theme.ElementBg2
-				knob.Position = state and UDim2.new(1, -3, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
-				knob.AnchorPoint = Vector2.new(state and 1 or 0, 0.5)
-			end,
+			Set = function(s) state = s end,
 			Get = function() return state end,
 		}
 	end
 
-	function Tab.CreateCheckbox(text: string | {[string]: string}, default: boolean?, callback: any)
-		local wrapped = normalizeCallback(callback, toLabel(text), self_)
-		local checked = default or false
+	function Factory.CreateSection(title)
+		local card = new("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = Theme.Sidebar,
+			Parent = container,
+		}, {
+			corner(14),
+			stroke(),
+			new("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
+			new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+		})
 
-		local holder = new("Frame", {
-			Size = UDim2.new(1, 0, 0, 48),
-			BackgroundColor3 = Theme.ElementBg,
-			Parent = page,
-		}, { corner(12), stroke() })
-
-		local checkboxLabel = new("TextLabel", {
-			Size = UDim2.new(1, -64, 1, 0),
-			Position = UDim2.new(0, 16, 0, 0),
+		local titleLabel = new("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 16),
+			LayoutOrder = 0,
 			BackgroundTransparency = 1,
 			Text = "",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 15,
-			TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = holder,
-		})
-		bindText(self_, checkboxLabel, text)
-
-		local box = new("Frame", {
-			Size = UDim2.new(0, 26, 0, 26),
-			Position = UDim2.new(1, -16, 0.5, 0),
-			AnchorPoint = Vector2.new(1, 0.5),
-			BackgroundColor3 = checked and Theme.Accent or Theme.ElementBg2,
-			Parent = holder,
-		}, { corner(7), stroke(Theme.Stroke, 1) })
-
-		local checkMark = new("TextLabel", {
-			Size = UDim2.new(1, 0, 1, 0),
-			BackgroundTransparency = 1,
-			Text = "✓",
 			Font = Enum.Font.GothamBold,
-			TextSize = 17,
-			TextColor3 = Color3.new(1, 1, 1),
-			TextTransparency = checked and 0 or 1,
-			Parent = box,
-		})
-
-		local clickArea = new("TextButton", {
-			Size = UDim2.new(1, 0, 1, 0),
-			BackgroundTransparency = 1,
-			Text = "",
-			Parent = holder,
-		})
-
-		local function applyVisual(animate: boolean)
-			local targetColor = checked and Theme.Accent or Theme.ElementBg2
-			local targetTransparency = checked and 0 or 1
-			if animate then
-				TweenService:Create(box, TWEEN_FAST, { BackgroundColor3 = targetColor }):Play()
-				TweenService:Create(checkMark, TWEEN_FAST, { TextTransparency = targetTransparency }):Play()
-			else
-				box.BackgroundColor3 = targetColor
-				checkMark.TextTransparency = targetTransparency
-			end
-		end
-
-		clickArea.MouseButton1Click:Connect(function()
-			checked = not checked
-			applyVisual(true)
-			wrapped(checked)
-		end)
-
-		return {
-			Set = function(newVal: boolean)
-				checked = newVal
-				applyVisual(false)
-			end,
-			Get = function() return checked end,
-		}
-	end
-
-	function Tab.CreateSlider(text: string | {[string]: string}, min: number, max: number, default: number?, callback: any)
-		local wrapped = normalizeCallback(callback, toLabel(text), self_)
-		local value = math.clamp(default or min, min, max)
-		local dragging = false
-
-		local holder = new("Frame", {
-			Size = UDim2.new(1, 0, 0, 60),
-			BackgroundColor3 = Theme.ElementBg,
-			Parent = page,
-		}, { corner(12), stroke() })
-
-		local label = new("TextLabel", {
-			Size = UDim2.new(1, -32, 0, 24),
-			Position = UDim2.new(0, 16, 0, 6),
-			BackgroundTransparency = 1,
-			Text = "",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 15,
-			TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = holder,
-		})
-		bindText(self_, label, text)
-
-		local valueLabel = new("TextLabel", {
-			Size = UDim2.new(0, 50, 0, 24),
-			Position = UDim2.new(1, -16, 0, 6),
-			AnchorPoint = Vector2.new(1, 0),
-			BackgroundTransparency = 1,
-			Text = tostring(value),
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Theme.Accent,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			Parent = holder,
-		})
-
-		local track = new("Frame", {
-			Size = UDim2.new(1, -32, 0, 8),
-			Position = UDim2.new(0, 16, 1, -18),
-			BackgroundColor3 = Theme.ElementBg2,
-			Parent = holder,
-		}, { corner(4) })
-
-		local function ratio()
-			return (value - min) / (max - min)
-		end
-
-		local fill = new("Frame", {
-			Size = UDim2.new(ratio(), 0, 1, 0),
-			BackgroundColor3 = Theme.Accent,
-			Parent = track,
-		}, { corner(4) })
-
-		local knob = new("Frame", {
-			Size = UDim2.new(0, 18, 0, 18),
-			Position = UDim2.new(ratio(), 0, 0.5, 0),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			Parent = track,
-		}, { corner(9), stroke(Theme.Stroke, 1) })
-
-		local function updateFromX(inputX: number)
-			local abs = track.AbsolutePosition.X
-			local size = track.AbsoluteSize.X
-			local r = math.clamp((inputX - abs) / size, 0, 1)
-			value = math.floor(min + (max - min) * r + 0.5)
-			fill.Size = UDim2.new(r, 0, 1, 0)
-			knob.Position = UDim2.new(r, 0, 0.5, 0)
-			valueLabel.Text = tostring(value)
-			wrapped(value)
-		end
-
-		track.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				dragging = true
-				updateFromX(input.Position.X)
-			end
-		end)
-		UserInputService.InputChanged:Connect(function(input)
-			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				updateFromX(input.Position.X)
-			end
-		end)
-		UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				dragging = false
-			end
-		end)
-
-		return {
-			Set = function(v: number)
-				value = math.clamp(v, min, max)
-				fill.Size = UDim2.new(ratio(), 0, 1, 0)
-				knob.Position = UDim2.new(ratio(), 0, 0.5, 0)
-				valueLabel.Text = tostring(value)
-			end,
-			Get = function() return value end,
-		}
-	end
-
-	function Tab.CreateLabel(text: string | {[string]: string})
-		local labelInst = new("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 28),
-			BackgroundTransparency = 1,
-			Text = "",
-			Font = Enum.Font.Gotham,
-			TextSize = 13,
+			TextSize = 12,
 			TextColor3 = Theme.SubText,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = page,
+			Parent = card,
 		})
-		bindText(self_, labelInst, text)
-		return labelInst
+		bindText(self_, titleLabel, title)
+
+		return createElementFactory(card, self_)
 	end
 
-	function Tab.CreateModelViewer(model: Model, height: number?, spinSpeed: number?)
-		local holder = new("Frame", {
-			Size = UDim2.new(1, 0, 0, height or 180),
-			BackgroundColor3 = Theme.ElementBg,
-			Parent = page,
-		}, { corner(12), stroke() })
+	return Factory
+end
 
-		local viewport, destroy = createModelViewport({
-			Size = UDim2.new(1, -12, 1, -12),
-			Position = UDim2.new(0.5, 0, 0.5, 0),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = Theme.ElementBg2,
-			Parent = holder,
-		}, model, spinSpeed)
+function ModernUI.CreateTab(self, name, icon, _opts)
+	local opts = _opts or {}
+	local tabId = opts.tabId or toLabel(name)
+	local isFirst = (not opts.isSystem) and self._firstTab == nil
+	if isFirst then self._firstTab = tabId end
 
-		return {
-			Viewport = viewport,
-			Destroy = destroy,
-		}
-	end
-		function Tab.CreateDropdown(text: string | {[string]: string}, options: {string}, default: string?, callback: any)
-		local wrapped = normalizeCallback(callback, toLabel(text), self_)
-		local selected = default or options[1]
-		local open = false
+	self._tabCounter = (self._tabCounter or 0) + 1
 
-		local holder = new("Frame", {
-			Size = UDim2.new(1, 0, 0, 48),
-			BackgroundColor3 = Theme.ElementBg,
-			ClipsDescendants = true,
-			Parent = page,
-		}, { corner(12), stroke() })
+	local btn = new("TextButton", {
+		Name = tabId,
+		LayoutOrder = opts.layoutOrder or self._tabCounter,
+		Size = UDim2.new(0, 52, 0, 52),
+		BackgroundColor3 = isFirst and Theme.Accent or Theme.ElementBg,
+		Text = "",
+		AutoButtonColor = false,
+		Parent = self.TabButtons,
+	}, { corner(14) })
 
-		local dropdownLabel = new("TextLabel", {
-			Size = UDim2.new(1, -140, 0, 48),
-			Position = UDim2.new(0, 16, 0, 0),
-			BackgroundTransparency = 1,
-			Text = "",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 15,
-			TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = holder,
-		})
-		bindText(self_, dropdownLabel, text)
+	local page = new("ScrollingFrame", {
+		Name = tabId .. "_Page",
+		Size = UDim2.new(1, -32, 1, -(28 + self._titleOffset)),
+		Position = UDim2.new(0, 16, 0, 20 + self._titleOffset),
+		BackgroundTransparency = 1,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Theme.Accent,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		Visible = isFirst,
+		Parent = self.ContentHolder,
+	}, {
+		new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
 
-		local current = new("TextButton", {
-			Size = UDim2.new(0, 120, 0, 32),
-			Position = UDim2.new(1, -16, 0, 8),
-			AnchorPoint = Vector2.new(1, 0),
-			BackgroundColor3 = Theme.ElementBg2,
-			Text = selected,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 13,
-			TextColor3 = Theme.Text,
-			AutoButtonColor = false,
-			Parent = holder,
-		}, { corner(8) })
+	self.Tabs[tabId] = page
 
-		local list = new("Frame", {
-			Size = UDim2.new(1, -32, 0, #options * 34),
-			Position = UDim2.new(0, 16, 0, 52),
-			BackgroundTransparency = 1,
-			Parent = holder,
-		}, {
-			new("UIListLayout", { Padding = UDim.new(0, 4) }),
-		})
-
-		for _, opt in ipairs(options) do
-			local optBtn = new("TextButton", {
-				Size = UDim2.new(1, 0, 0, 30),
-				BackgroundColor3 = Theme.ElementBg2,
-				Text = opt,
-				Font = Enum.Font.Gotham,
-				TextSize = 13,
-				TextColor3 = Theme.SubText,
-				AutoButtonColor = false,
-				Parent = list,
-			}, { corner(8) })
-
-			optBtn.MouseButton1Click:Connect(wrapCallback(function()
-				selected = opt
-				current.Text = selected
-				open = false
-				holder.Size = UDim2.new(1, 0, 0, 48)
-				wrapped(selected)
-			end, { label = toLabel(text) .. "_option" }))
+	btn.MouseButton1Click:Connect(function()
+		for tabName, p in pairs(self.Tabs) do
+			p.Visible = (tabName == tabId)
 		end
+		for _, otherBtn in ipairs(self.TabButtons:GetChildren()) do
+			if otherBtn:IsA("TextButton") then
+				TweenService:Create(otherBtn, TWEEN_FAST, {
+					BackgroundColor3 = (otherBtn.Name == tabId) and Theme.Accent or Theme.ElementBg,
+				}):Play()
+			end
+		end
+	end)
 
-		current.MouseButton1Click:Connect(function()
-			open = not open
-			TweenService:Create(holder, TWEEN_MED, {
-				Size = open and UDim2.new(1, 0, 0, 52 + #options * 34) or UDim2.new(1, 0, 0, 48),
-			}):Play()
-		end)
+	local factory = createElementFactory(page, self)
+	cascadeIn(page)
+	return factory
+end
 
-		return {
-			Get = function() return selected end,
-		}
+--================================================================
+-- ПРИМЕР ИСПОЛЬЗОВАНИЯ
+--================================================================
+local Window = ModernUI.new({
+	Title = { ru = "Executor Hub", en = "Executor Hub" },
+	AvatarId = "rbxassetid://0",
+	Language = "ru",
+	ShowErrorsAsToast = true,
+})
+
+local MainTab = Window:CreateTab({ ru = "Главная", en = "Main" }, "rbxassetid://0")
+local MiscSection = MainTab.CreateSection({ ru = "Управление", en = "Controls" })
+
+MiscSection.CreateButton({ ru = "Запустить мой скрипт", en = "Run my script" }, function()
+	print("Ваш внешний скрипт успешно запущен параллельно с UI!")
+	Window:Notify({ ru = "Скрипт выполнен!", en = "Script executed!" }, 2)
+end)
+
+MiscSection.CreateToggle({ ru = "Функция вкл/выкл", en = "Toggle feature" }, false, function(state)
+	if state then
+		print("Функция включена")
+	else
+		print("Функция выключена")
 	end
-
-	return Tab
-end
-
-function ModernUI.Destroy(self: Window)
-	(self :: any).ScreenGui:Destroy()
-end
-
-return ModernUI
+end)
