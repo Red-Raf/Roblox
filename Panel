@@ -14,7 +14,7 @@ local LocalPlayer = Players.LocalPlayer
 local Window = Rayfield:CreateWindow({
 	Name = "Universal IY Hub | Rayfield",
 	LoadingTitle = "Universal IY Hub",
-	LoadingSubtitle = "Загрузка интерфейса...",
+	LoadingSubtitle = "Загрузка...",
 	ConfigurationSaving = {
 		Enabled = false,
 		FolderName = nil,
@@ -490,6 +490,3 @@ AdminTab:CreateButton({
 		end
 	end,
 })
-
--- Принудительная загрузка интерфейса Rayfield
-Rayfield:Load()
