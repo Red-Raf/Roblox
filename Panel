@@ -1,7 +1,14 @@
 --!strict
 
--- Загрузка библиотеки ModernUI (замените URL на вашу ссылку)
-local ModernUI = loadstring(game:HttpGet("YOUR_URL_HERE"))()
+-- Загрузка библиотеки ModernUI из вашего репозитория
+local success, ModernUI = pcall(function()
+	return loadstring(game:HttpGet("https://raw.githubusercontent.com/Red-Raf/Roblox/refs/heads/main/ModernUI.lua"))()
+end)
+
+if not success or not ModernUI then
+	warn("Не удалось загрузить ModernUI с GitHub!")
+	return
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,13 +23,18 @@ local Window = ModernUI.new({
 		en = "Universal IY Hub | ModernUI",
 	},
 	AvatarId = "rbxassetid://6034287525",
-	MobileOnly = false,
 	Language = "ru",
 	ShowErrorsAsToast = true,
 	IncludeSettingsTab = true,
 })
 
--- Добавление социальных сетей в боковую панель
+-- Безопасное добавление социальной ссылки, если метод отсутствует в базовой версии
+if not Window.AddSocialLink then
+	function Window:AddSocialLink(name, url)
+		print("[SocialLink] " .. name .. ": " .. url)
+	end
+end
+
 Window:AddSocialLink("Discord", "https://discord.gg/yourinvite")
 Window:AddSocialLink("Telegram", "https://t.me/yourchannel")
 
