@@ -9,6 +9,27 @@ local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
+-- Байпасс против кика за Invalid Position / Teleport
+pcall(function()
+	local mt = getrawmetatable(game)
+	setreadonly(mt, false)
+	local oldNamecall = mt.__namecall
+	mt.__namecall = newcclosure(function(self, ...)
+		local method = getnamecallmethod()
+		local args = {...}
+		if method == "Kick" or method == "kick" then
+			if args[1] and type(args[1]) == "string" then
+				local msg = string.lower(args[1])
+				if msg:find("position") or msg:find("teleport") or msg:find("pos") or msg:find("exploit") then
+					return
+				end
+			end
+		end
+		return oldNamecall(self, ...)
+	end)
+	setreadonly(mt, true)
+end)
+
 -- Создание главного окна
 local Window = Rayfield:CreateWindow({
 	Name = "Folite Panel (Lite)",
@@ -67,9 +88,22 @@ PlayerTab:CreateSlider({
 	end,
 })
 
+local flySpeed = 50
+PlayerTab:CreateSlider({
+	Name = "Скорость полета (Fly Speed)",
+	Range = {10, 200},
+	Increment = 5,
+	Suffix = "",
+	CurrentValue = 50,
+	Flag = "FlySpeed",
+	Callback = function(v)
+		flySpeed = v
+	end,
+})
+
 local flyConn = nil
 PlayerTab:CreateToggle({
-	Name = "Полет (Fly)",
+	Name = "Полет (Fly - Infinite Yield style)",
 	CurrentValue = false,
 	Flag = "Fly",
 	Callback = function(state)
@@ -97,14 +131,111 @@ PlayerTab:CreateToggle({
 			flyConn = RunService.RenderStepped:Connect(function()
 				local cam = workspace.CurrentCamera
 				local moveDir = hum.MoveDirection
-				bv.Velocity = moveDir * 50
+				bv.Velocity = moveDir * flySpeed
 				bg.CFrame = cam.CFrame
 			end)
 		else
-			if flyConn then flyConn:Disconnect() end
+			if flyConn then flyConn:Disconnect() flyConn = nil end
 			if hum then hum.PlatformStand = false end
 			if hrp:FindFirstChild("IY_FlyVel") then hrp.IY_FlyVel:Destroy() end
 			if hrp:FindFirstChild("IY_FlyGyro") then hrp.IY_FlyGyro:Destroy() end
+		end
+	end,
+})
+
+local flyFlingSpeed = 50
+PlayerTab:CreateSlider({
+	Name = "Скорость полета с выкидыванием (Fly Fling Speed)",
+	Range = {10, 200},
+	Increment = 5,
+	Suffix = "",
+	CurrentValue = 50,
+	Flag = "FlyFlingSpeed",
+	Callback = function(v)
+		flyFlingSpeed = v
+	end,
+})
+
+local flyFlingConn = nil
+PlayerTab:CreateToggle({
+	Name = "Полет с выкидыванием (Fly Fling)",
+	CurrentValue = false,
+	Flag = "FlyFling",
+	Callback = function(state)
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hrp or not hum then return end
+
+		if state then
+			local bv = Instance.new("BodyVelocity")
+			bv.Name = "IY_FF_Vel"
+			bv.Parent = hrp
+			bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			bv.Velocity = Vector3.zero
+
+			local bg = Instance.new("BodyGyro")
+			bg.Name = "IY_FF_Gyro"
+			bg.Parent = hrp
+			bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+			bg.P = 1000
+
+			local bav = Instance.new("BodyAngularVelocity")
+			bav.Name = "IY_FF_Ang"
+			bav.Parent = hrp
+			bav.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+			bav.AngularVelocity = Vector3.new(0, 99999, 0)
+
+			hum.PlatformStand = true
+
+			flyFlingConn = RunService.RenderStepped:Connect(function()
+				local cam = workspace.CurrentCamera
+				local moveDir = hum.MoveDirection
+				bv.Velocity = moveDir * flyFlingSpeed
+				bg.CFrame = cam.CFrame
+				bav.AngularVelocity = Vector3.new(0, 99999, 0)
+			end)
+		else
+			if flyFlingConn then flyFlingConn:Disconnect() flyFlingConn = nil end
+			if hum then hum.PlatformStand = false end
+			if hrp:FindFirstChild("IY_FF_Vel") then hrp.IY_FF_Vel:Destroy() end
+			if hrp:FindFirstChild("IY_FF_Gyro") then hrp.IY_FF_Gyro:Destroy() end
+			if hrp:FindFirstChild("IY_FF_Ang") then hrp.IY_FF_Ang:Destroy() end
+		end
+	end,
+})
+
+local wwPart = nil
+local wwConn = nil
+PlayerTab:CreateToggle({
+	Name = "Хождение по воде (WaterWalk)",
+	CurrentValue = false,
+	Flag = "WaterWalk",
+	Callback = function(state)
+		if state then
+			wwPart = Instance.new("Part")
+			wwPart.Name = "WaterWalkPart"
+			wwPart.Anchored = true
+			wwPart.Transparency = 1
+			wwPart.Size = Vector3.new(6, 1, 6)
+			wwPart.Parent = workspace
+			
+			wwConn = RunService.RenderStepped:Connect(function()
+				local char = LocalPlayer.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if hrp and hum then
+					if hum.FloorMaterial == Enum.Material.Water then
+						wwPart.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 3.5, hrp.Position.Z)
+					else
+						wwPart.CFrame = CFrame.new(0, -10000, 0)
+					end
+				end
+			end)
+		else
+			if wwConn then wwConn:Disconnect() wwConn = nil end
+			if wwPart then wwPart:Destroy() wwPart = nil end
 		end
 	end,
 })
@@ -127,7 +258,7 @@ PlayerTab:CreateToggle({
 				end
 			end)
 		else
-			if noclipConn then noclipConn:Disconnect() end
+			if noclipConn then noclipConn:Disconnect() noclipConn = nil end
 		end
 	end,
 })
@@ -147,7 +278,7 @@ PlayerTab:CreateToggle({
 				end
 			end)
 		else
-			if infJumpConn then infJumpConn:Disconnect() end
+			if infJumpConn then infJumpConn:Disconnect() infJumpConn = nil end
 		end
 	end,
 })
@@ -174,6 +305,25 @@ PlayerTab:CreateToggle({
 --================================================================
 local FunTab = Window:CreateTab("Троллинг", 4483362458)
 
+FunTab:CreateButton({
+	Name = "Сесть (Sit)",
+	Callback = function()
+		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum.Sit = true end
+	end,
+})
+
+FunTab:CreateButton({
+	Name = "Встать (Unsit)",
+	Callback = function()
+		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if hum then 
+			hum.Sit = false 
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp) 
+		end
+	end,
+})
+
 local flingConn = nil
 FunTab:CreateToggle({
 	Name = "Флинг (Fling)",
@@ -192,7 +342,7 @@ FunTab:CreateToggle({
 				end
 			end)
 		else
-			if flingConn then flingConn:Disconnect() end
+			if flingConn then flingConn:Disconnect() flingConn = nil end
 		end
 	end,
 })
@@ -224,21 +374,32 @@ FunTab:CreateToggle({
 				end
 			end)
 		else
-			if spinConn then spinConn:Disconnect() end
+			if spinConn then spinConn:Disconnect() spinConn = nil end
 		end
 	end,
 })
 
 local bhopConn = nil
+local bhopJumpConn = nil
+local currentBhopSpeed = 16
+
 FunTab:CreateToggle({
 	Name = "Баннихоп (BunnyHop)",
 	CurrentValue = false,
 	Flag = "Bhop",
 	Callback = function(state)
 		if state then
-			local currentSpeed = 16
-			local maxBhopSpeed = 45
-			local lastVel = Vector3.zero
+			currentBhopSpeed = 16
+
+			bhopJumpConn = UserInputService.JumpRequest:Connect(function()
+				local char = LocalPlayer.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if hum and hum.MoveDirection.Magnitude > 0 then
+					currentBhopSpeed = math.clamp(currentBhopSpeed + 4, 16, 55)
+				else
+					currentBhopSpeed = 16
+				end
+			end)
 
 			bhopConn = RunService.Heartbeat:Connect(function()
 				local char = LocalPlayer.Character
@@ -246,28 +407,18 @@ FunTab:CreateToggle({
 				local hrp = char and char:FindFirstChild("HumanoidRootPart")
 				if not hum or not hrp then return end
 
-				local vel = hrp.AssemblyLinearVelocity
-				local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
-
-				if lastVel.Magnitude - horizontalVel.Magnitude > 15 then
-					currentSpeed = 16
-				end
-				lastVel = horizontalVel
-
-				if hum.FloorMaterial ~= Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
-					hum:ChangeState(Enum.HumanoidStateType.Jumping)
-					currentSpeed = math.clamp(currentSpeed + 2, 16, maxBhopSpeed)
+				if hum.FloorMaterial == Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
 					local moveDir = hum.MoveDirection.Unit
-					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
-				elseif hum.FloorMaterial == Enum.Material.Air and hum.MoveDirection.Magnitude > 0 then
-					local moveDir = hum.MoveDirection.Unit
-					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * currentSpeed)
-				else
-					currentSpeed = 16
+					local vel = hrp.AssemblyLinearVelocity
+					hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * currentBhopSpeed, vel.Y, moveDir.Z * currentBhopSpeed)
+				elseif hum.FloorMaterial ~= Enum.Material.Air and hum.MoveDirection.Magnitude == 0 then
+					currentBhopSpeed = 16
 				end
 			end)
 		else
-			if bhopConn then bhopConn:Disconnect() end
+			if bhopConn then bhopConn:Disconnect() bhopConn = nil end
+			if bhopJumpConn then bhopJumpConn:Disconnect() bhopJumpConn = nil end
+			currentBhopSpeed = 16
 		end
 	end,
 })
@@ -286,7 +437,7 @@ FunTab:CreateToggle({
 				end
 			end)
 		else
-			if clickDeleteConn then clickDeleteConn:Disconnect() end
+			if clickDeleteConn then clickDeleteConn:Disconnect() clickDeleteConn = nil end
 		end
 	end,
 })
@@ -323,10 +474,31 @@ VisualsTab:CreateToggle({
 			end
 			espConn = Players.PlayerAdded:Connect(addESP)
 		else
-			if espConn then espConn:Disconnect() end
+			if espConn then espConn:Disconnect() espConn = nil end
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p.Character and p.Character:FindFirstChild("IY_ESP") then
 					p.Character.IY_ESP:Destroy()
+				end
+			end
+		end
+	end,
+})
+
+VisualsTab:CreateToggle({
+	Name = "Икс-рей (X-Ray)",
+	CurrentValue = false,
+	Flag = "XRay",
+	Callback = function(state)
+		if state then
+			for _, v in ipairs(workspace:GetDescendants()) do
+				if v:IsA("BasePart") and not v.Parent:FindFirstChild("Humanoid") and not v.Parent.Parent:FindFirstChild("Humanoid") then
+					v.LocalTransparencyModifier = 0.5
+				end
+			end
+		else
+			for _, v in ipairs(workspace:GetDescendants()) do
+				if v:IsA("BasePart") then
+					v.LocalTransparencyModifier = 0
 				end
 			end
 		end
@@ -460,32 +632,91 @@ TeleportsTab:CreateToggle({
 				end
 			end)
 		else
-			if ctrlTpConn then ctrlTpConn:Disconnect() end
+			if ctrlTpConn then ctrlTpConn:Disconnect() ctrlTpConn = nil end
 		end
 	end,
 })
 
 --================================================================
--- Вкладка 5: Утилиты
+-- Вкладка 5: Декодировка
 --================================================================
-local AdminTab = Window:CreateTab("Утилиты", 4483362458)
+local DecodeTab = Window:CreateTab("Декодировка", 4483362458)
 
-AdminTab:CreateButton({
-	Name = "Перезайти на сервер (Rejoin)",
-	Callback = function()
-		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+DecodeTab:CreateParagraph({
+	Title = "Режим декодировки скриптов",
+	Content = "Считывает запущенные скрипты и модули в игре, декомпилирует их и выводит логику вместе с функциями в консоль (F9)."
+})
+
+local decodeFilterText = ""
+DecodeTab:CreateInput({
+	Name = "Фильтр по имени скрипта (необязательно)",
+	PlaceholderText = "Введите часть имени...",
+	RemoveTextAfterFocusLost = false,
+	Callback = function(text)
+		decodeFilterText = text
 	end,
 })
 
-AdminTab:CreateButton({
-	Name = "Сбросить персонажа (Reset)",
+DecodeTab:CreateButton({
+	Name = "Сканировать и декодировать скрипты",
 	Callback = function()
-		local char = LocalPlayer.Character
-		if char then
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum.Health = 0
+		if not decompile then
+			Rayfield:Notify({
+				Title = "Ошибка",
+				Content = "Ваш экзекьютор не поддерживает функцию decompile()!",
+				Duration = 4,
+				Image = 4483362458
+			})
+			return
+		end
+
+		local success, result = pcall(function()
+			local modules = {}
+			if getloadedmodules then
+				modules = getloadedmodules()
+			else
+				for _, v in ipairs(game:GetDescendants()) do
+					if v:IsA("LocalScript") or v:IsA("ModuleScript") then
+						table.insert(modules, v)
+					end
+				end
 			end
+
+			local count = 0
+			print("==================== НАЧАЛО ДЕКОДИРОВКИ ====================")
+			for _, scr in ipairs(modules) do
+				local name = scr.Name
+				if decodeFilterText == "" or string.find(string.lower(name), string.lower(decodeFilterText)) then
+					local status, sourceCode = pcall(function()
+						return decompile(scr)
+					end)
+					if status and sourceCode then
+						count = count + 1
+						print("\n--- Скрипт [" .. count .."]: " .. scr:GetFullName() .. " ---")
+						print(sourceCode)
+					end
+				end
+			end
+			print("==================== КОНЕЦ ДЕКОДИРОВКИ (Найдено: " .. count .. ") ====================")
+			return count
+		end)
+
+		if success then
+			Rayfield:Notify({
+				Title = "Декодировка завершена",
+				Content = "Успешно обработано скриптов. Откройте консоль (F9) для просмотра кода.",
+				Duration = 5,
+				Image = 4483362458
+			})
+		else
+			Rayfield:Notify({
+				Title = "Ошибка",
+				Content = "Произошла ошибка при сканировании скриптов.",
+				Duration = 3,
+				Image = 4483362458
+			})
 		end
 	end,
 })
+
+--========================================
