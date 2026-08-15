@@ -7,25 +7,26 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
--- Создание главного окна Rayfield (без экрана загрузки, вызывающего зависание)
+-- Создание главного окна
 local Window = Rayfield:CreateWindow({
-	Name = "Universal IY Hub | Rayfield",
+	Name = "Folite Panel (Lite)",
 	ConfigurationSaving = {
 		Enabled = false,
 		FolderName = nil,
-		FileName = "UniversalIYHub"
+		FileName = "FolitePanelLite"
 	},
 	Discord = {
 		Enabled = false,
-		Invite = "yourinvite",
+		Invite = "no",
 		RememberJoins = true
 	},
 	KeySystem = false,
 })
 
 --================================================================
--- Вкладка 1: Игрок (Player)
+-- Вкладка 1: Игрок
 --================================================================
 local PlayerTab = Window:CreateTab("Игрок", "rbxassetid://6031080277")
 
@@ -35,7 +36,7 @@ PlayerTab:CreateSlider({
 	Increment = 1,
 	Suffix = "",
 	CurrentValue = 16,
-	Flag = "WalkSpeedSlider",
+	Flag = "WS",
 	Callback = function(v)
 		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 		if hum then hum.WalkSpeed = v end
@@ -48,7 +49,7 @@ PlayerTab:CreateSlider({
 	Increment = 1,
 	Suffix = "",
 	CurrentValue = 50,
-	Flag = "JumpPowerSlider",
+	Flag = "JP",
 	Callback = function(v)
 		local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 		if hum then
@@ -62,7 +63,7 @@ local flyConn = nil
 PlayerTab:CreateToggle({
 	Name = "Полет (Fly)",
 	CurrentValue = false,
-	Flag = "FlyToggle",
+	Flag = "Fly",
 	Callback = function(state)
 		local char = LocalPlayer.Character
 		if not char then return end
@@ -104,7 +105,7 @@ local noclipConn = nil
 PlayerTab:CreateToggle({
 	Name = "Хождение сквозь стены (Noclip)",
 	CurrentValue = false,
-	Flag = "NoclipToggle",
+	Flag = "Noclip",
 	Callback = function(state)
 		if state then
 			noclipConn = RunService.Stepped:Connect(function()
@@ -127,7 +128,7 @@ local infJumpConn = nil
 PlayerTab:CreateToggle({
 	Name = "Бесконечный прыжок (Infinite Jump)",
 	CurrentValue = false,
-	Flag = "InfJumpToggle",
+	Flag = "InfJump",
 	Callback = function(state)
 		if state then
 			infJumpConn = UserInputService.JumpRequest:Connect(function()
@@ -146,7 +147,7 @@ PlayerTab:CreateToggle({
 PlayerTab:CreateToggle({
 	Name = "Невидимость (Invisible)",
 	CurrentValue = false,
-	Flag = "InvisibleToggle",
+	Flag = "Invisible",
 	Callback = function(state)
 		local char = LocalPlayer.Character
 		if char then
@@ -161,7 +162,7 @@ PlayerTab:CreateToggle({
 })
 
 --================================================================
--- Вкладка 2: Функции (Fun / Actions)
+-- Вкладка 2: Функции
 --================================================================
 local FunTab = Window:CreateTab("Функции", "rbxassetid://6023426915")
 
@@ -169,7 +170,7 @@ local flingConn = nil
 FunTab:CreateToggle({
 	Name = "Флинг (Fling)",
 	CurrentValue = false,
-	Flag = "FlingToggle",
+	Flag = "Fling",
 	Callback = function(state)
 		if state then
 			flingConn = RunService.Heartbeat:Connect(function()
@@ -188,39 +189,15 @@ FunTab:CreateToggle({
 	end,
 })
 
-local flyFlingConn = nil
-FunTab:CreateToggle({
-	Name = "Флинг в полете (Fly Fling)",
-	CurrentValue = false,
-	Flag = "FlyFlingToggle",
-	Callback = function(state)
-		if state then
-			flyFlingConn = RunService.Heartbeat:Connect(function()
-				local char = LocalPlayer.Character
-				local hrp = char and char:FindFirstChild("HumanoidRootPart")
-				local cam = workspace.CurrentCamera
-				if hrp and cam then
-					hrp.CFrame = cam.CFrame
-					hrp.Velocity = Vector3.new(99999, 99999, 99999)
-					hrp.RotVelocity = Vector3.new(99999, 99999, 99999)
-				end
-			end)
-		else
-			if flyFlingConn then flyFlingConn:Disconnect() end
-		end
-	end,
-})
-
 local spinSpeed = 10
 local spinConn = nil
-
 FunTab:CreateSlider({
 	Name = "Скорость вращения (Spin Speed)",
 	Range = {0, 100},
 	Increment = 1,
 	Suffix = "",
 	CurrentValue = 10,
-	Flag = "SpinSpeedSlider",
+	Flag = "SpinSpeed",
 	Callback = function(v)
 		spinSpeed = v
 	end,
@@ -229,7 +206,7 @@ FunTab:CreateSlider({
 FunTab:CreateToggle({
 	Name = "Вращение (Spin)",
 	CurrentValue = false,
-	Flag = "SpinToggle",
+	Flag = "Spin",
 	Callback = function(state)
 		if state then
 			spinConn = RunService.Heartbeat:Connect(function()
@@ -248,7 +225,7 @@ local bhopConn = nil
 FunTab:CreateToggle({
 	Name = "Баннихоп (BunnyHop)",
 	CurrentValue = false,
-	Flag = "BhopToggle",
+	Flag = "Bhop",
 	Callback = function(state)
 		if state then
 			local currentSpeed = 16
@@ -287,26 +264,35 @@ FunTab:CreateToggle({
 	end,
 })
 
+local clickDeleteConn = nil
+FunTab:CreateToggle({
+	Name = "Удаление объектов по клику (Click Delete)",
+	CurrentValue = false,
+	Flag = "ClickDelete",
+	Callback = function(state)
+		if state then
+			clickDeleteConn = Mouse.Button1Down:Connect(function()
+				local target = Mouse.Target
+				if target and target:IsA("BasePart") then
+					target:Destroy()
+				end
+			end)
+		else
+			if clickDeleteConn then clickDeleteConn:Disconnect() end
+		end
+	end,
+})
+
 --================================================================
--- Вкладка 3: Визуалы (Visuals)
+-- Вкладка 3: Визуалы
 --================================================================
 local VisualsTab = Window:CreateTab("Визуалы", "rbxassetid://6031080277")
 
-local espColors = {
-	{name = "Red", color = Color3.fromRGB(255, 0, 0)},
-	{name = "Green", color = Color3.fromRGB(0, 255, 0)},
-	{name = "Blue", color = Color3.fromRGB(0, 150, 255)},
-	{name = "Yellow", color = Color3.fromRGB(255, 255, 0)},
-	{name = "Purple", color = Color3.fromRGB(150, 0, 255)},
-	{name = "White", color = Color3.fromRGB(255, 255, 255)}
-}
-local currentEspColorIndex = 1
 local espConn = nil
-
 VisualsTab:CreateToggle({
-	Name = "ESP Подсветка игроков (Player ESP)",
+	Name = "ESP Подсветка игроков",
 	CurrentValue = false,
-	Flag = "ESPToggle",
+	Flag = "ESP",
 	Callback = function(state)
 		if state then
 			local function addESP(p)
@@ -316,7 +302,7 @@ VisualsTab:CreateToggle({
 						local hl = Instance.new("Highlight")
 						hl.Name = "IY_ESP"
 						hl.Adornee = c
-						hl.FillColor = espColors[currentEspColorIndex].color
+						hl.FillColor = Color3.fromRGB(255, 0, 0)
 						hl.OutlineColor = Color3.fromRGB(255, 255, 255)
 						hl.Parent = c
 					end
@@ -339,30 +325,10 @@ VisualsTab:CreateToggle({
 	end,
 })
 
-VisualsTab:CreateDropdown({
-	Name = "Цвет ESP (ESP Color)",
-	Options = {"Red", "Green", "Blue", "Yellow", "Purple", "White"},
-	CurrentOption = "Red",
-	Flag = "ESPColorDropdown",
-	Callback = function(choice)
-		for i, data in ipairs(espColors) do
-			if data.name == choice then
-				currentEspColorIndex = i
-				break
-			end
-		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character and p.Character:FindFirstChild("IY_ESP") then
-				p.Character.IY_ESP.FillColor = espColors[currentEspColorIndex].color
-			end
-		end
-	end,
-})
-
 VisualsTab:CreateToggle({
 	Name = "Полная яркость (Fullbright)",
 	CurrentValue = false,
-	Flag = "FullbrightToggle",
+	Flag = "Fullbright",
 	Callback = function(state)
 		if state then
 			Lighting.Ambient = Color3.new(1, 1, 1)
@@ -382,18 +348,30 @@ VisualsTab:CreateSlider({
 	Increment = 1,
 	Suffix = "",
 	CurrentValue = 196,
-	Flag = "GravitySlider",
+	Flag = "Gravity",
 	Callback = function(v)
 		workspace.Gravity = v
 	end,
 })
 
+VisualsTab:CreateSlider({
+	Name = "Угол обзора (FOV)",
+	Range = {50, 120},
+	Increment = 1,
+	Suffix = "",
+	CurrentValue = 70,
+	Flag = "FOV",
+	Callback = function(v)
+		workspace.CurrentCamera.FieldOfView = v
+	end,
+})
+
 --================================================================
--- Вкладка 4: Телепорты (Teleports)
+-- Вкладка 4: Телепорты
 --================================================================
 local TeleportsTab = Window:CreateTab("Телепорты", "rbxassetid://6023426915")
 
-TeleportsTab:CreateLabel("Безопасный телепорт к игроку (анти-кик):")
+TeleportsTab:CreateLabel("Телепортация и камера:")
 
 local function safeTeleportTo(targetPart)
 	local char = LocalPlayer.Character
@@ -417,10 +395,10 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 TeleportsTab:CreateDropdown({
-	Name = "Выбрать игрока",
+	Name = "Телепорт к игроку",
 	Options = #playerNames > 0 and playerNames or {"Нет игроков"},
 	CurrentOption = playerNames[1] or "Нет игроков",
-	Flag = "PlayerTeleportDropdown",
+	Flag = "PlayerTP",
 	Callback = function(choice)
 		local targetPlayer = Players:FindFirstChild(choice)
 		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -435,8 +413,52 @@ TeleportsTab:CreateDropdown({
 	end,
 })
 
+TeleportsTab:CreateDropdown({
+	Name = "Следить за игроком (Spectate)",
+	Options = #playerNames > 0 and playerNames or {"Нет игроков"},
+	CurrentOption = playerNames[1] or "Нет игроков",
+	Flag = "PlayerSpectate",
+	Callback = function(choice)
+		local targetPlayer = Players:FindFirstChild(choice)
+		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChildOfClass("Humanoid") then
+			workspace.CurrentCamera.CameraSubject = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+		end
+	end,
+})
+
+TeleportsTab:CreateButton({
+	Name = "Перестать следить (Вернуть камеру)",
+	Callback = function()
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+			workspace.CurrentCamera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		end
+	end,
+})
+
+local ctrlTpConn = nil
+TeleportsTab:CreateToggle({
+	Name = "Ctrl + Click TP (Телепорт по клику)",
+	CurrentValue = false,
+	Flag = "CtrlClickTP",
+	Callback = function(state)
+		if state then
+			ctrlTpConn = Mouse.Button1Down:Connect(function()
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+					local char = LocalPlayer.Character
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if hrp then
+						hrp.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 3, 0))
+					end
+				end
+			end)
+		else
+			if ctrlTpConn then ctrlTpConn:Disconnect() end
+		end
+	end,
+})
+
 --================================================================
--- Вкладка 5: Утилиты (Utilities / Admin)
+-- Вкладка 5: Утилиты
 --================================================================
 local AdminTab = Window:CreateTab("Утилиты", "rbxassetid://6031080277")
 
@@ -444,33 +466,6 @@ AdminTab:CreateButton({
 	Name = "Перезайти на сервер (Rejoin)",
 	Callback = function()
 		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-	end,
-})
-
-AdminTab:CreateButton({
-	Name = "Сменить сервер (Server Hop)",
-	Callback = function()
-		local servers = {}
-		local success, sitedata = pcall(function()
-			return game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
-		end)
-		if success and sitedata and sitedata.data then
-			for _, s in ipairs(sitedata.data) do
-				if type(s) == "table" and s.playing < s.maxPlayers and s.id ~= game.JobId then
-					table.insert(servers, s.id)
-				end
-			end
-			if #servers > 0 then
-				TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LocalPlayer)
-			else
-				Rayfield:Notify({
-					Title = "Ошибка",
-					Content = "Не удалось найти свободный сервер",
-					Duration = 3,
-					Image = 4483362458
-				})
-			end
-		end
 	end,
 })
 
