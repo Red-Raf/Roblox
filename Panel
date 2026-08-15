@@ -25,10 +25,18 @@ local Window = Rayfield:CreateWindow({
 	KeySystem = false,
 })
 
+-- Уведомление при загрузке скрипта
+Rayfield:Notify({
+	Title = "Folite Panel (Lite)",
+	Content = "Скрипт сделан FoliteTeam, Спасибо что выбираете нас!",
+	Duration = 6.5,
+	Image = 4483362458
+})
+
 --================================================================
 -- Вкладка 1: Игрок
 --================================================================
-local PlayerTab = Window:CreateTab("Игрок", "rbxassetid://6031080277")
+local PlayerTab = Window:CreateTab("Игрок", 4483362458)
 
 PlayerTab:CreateSlider({
 	Name = "Скорость бега (WalkSpeed)",
@@ -162,9 +170,9 @@ PlayerTab:CreateToggle({
 })
 
 --================================================================
--- Вкладка 2: Функции
+-- Вкладка 2: Троллинг
 --================================================================
-local FunTab = Window:CreateTab("Функции", "rbxassetid://6023426915")
+local FunTab = Window:CreateTab("Троллинг", 4483362458)
 
 local flingConn = nil
 FunTab:CreateToggle({
@@ -286,7 +294,7 @@ FunTab:CreateToggle({
 --================================================================
 -- Вкладка 3: Визуалы
 --================================================================
-local VisualsTab = Window:CreateTab("Визуалы", "rbxassetid://6031080277")
+local VisualsTab = Window:CreateTab("Визуалы", 4483362458)
 
 local espConn = nil
 VisualsTab:CreateToggle({
@@ -369,7 +377,7 @@ VisualsTab:CreateSlider({
 --================================================================
 -- Вкладка 4: Телепорты
 --================================================================
-local TeleportsTab = Window:CreateTab("Телепорты", "rbxassetid://6023426915")
+local TeleportsTab = Window:CreateTab("Телепорты", 4483362458)
 
 TeleportsTab:CreateLabel("Телепортация и камера:")
 
@@ -460,7 +468,7 @@ TeleportsTab:CreateToggle({
 --================================================================
 -- Вкладка 5: Утилиты
 --================================================================
-local AdminTab = Window:CreateTab("Утилиты", "rbxassetid://6031080277")
+local AdminTab = Window:CreateTab("Утилиты", 4483362458)
 
 AdminTab:CreateButton({
 	Name = "Перезайти на сервер (Rejoin)",
