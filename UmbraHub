@@ -282,7 +282,6 @@ task.wait(0.25)
 root.CFrame=root.CFrame
 end
 end
-
 local function autoShootLoop()
 while Settings.AutoShoot and task.wait(0.05) do
 local char=LocalPlayer.Character
@@ -317,6 +316,7 @@ end
 end
 end
 end
+
 local function toggleInfiniteZoom(state)
 Settings.InfiniteZoom=state
 if state then
