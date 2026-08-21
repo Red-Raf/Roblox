@@ -1,0 +1,1544 @@
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local UserInputService=game:GetService("UserInputService")
+local TweenService=game:GetService("TweenService")
+local TeleportService=game:GetService("TeleportService")
+local HttpService=game:GetService("HttpService")
+local VirtualUser=game:GetService("VirtualUser")
+local Camera=workspace.CurrentCamera
+local LocalPlayer=Players.LocalPlayer
+local Mouse=LocalPlayer:GetMouse()
+
+local Settings={
+ThemeHue=140,HotkeyKey=Enum.KeyCode.RightShift,XrayKey=Enum.KeyCode.X,GuiScale=1,
+SaturationValue=0,ChamsESP=false,RoleESP=false,GunESP=false,GunTextESP=false,
+Xray=false,Freecam=false,FreecamSpeed=50,Noclip=false,Fly=false,AntiFling=false,
+InfiniteZoom=false,InfiniteJump=false,AimAssist=false,AimTarget="Head",
+AimFilter="All",AimOnlyWithGun=false,AimPrediction=false,AimPredictionValue=150,
+AutoGrab=false,AutoShoot=false,AntiAFK=false,MotionBlur=false,
+MotionBlurIntensity=120,MotionBlurThreshold=5,CoinFarm=false,PlayerSpeed=16,
+PlayerJump=50,FlySpeed=50,PlayerSpinSpeed=0,FOV=70,MaxZoom=400,FpsCap=60,
+OrbitSpeed=60,OrbitDistance=10,CustomTime=14,CustomTimeEnabled=false,
+ActiveGunSoundID="",GunVolume=1,CustomCursorID="",CustomCursorSize=32,
+CursorSpin=false,CursorSpinSpeed=15,CursorAngle=false,CursorAngleValue=0,
+EspFillTransparency=100,GunEspFillTransparency=70,InnocentHue=120,
+MurdererHue=0,SheriffHue=240,GunHue=180,CoinSpeed=25,CoinRange=15
+}
+
+local freecamPart=nil
+local flyBV=nil
+local flyBG=nil
+local noclipConnection=nil
+local afkConnection=nil
+local motionBlurEffect=nil
+local orbitTarget=nil
+local orbitAngle=0
+local spectateTarget=nil
+local spectateConnection=nil
+local espObjects={}
+local gunEspObjects={}
+local xrayParts={}
+local oldFPDH=nil
+local roleCache={}
+
+local function getPlayerRole(plr)
+if not plr then return "Innocent" end
+local data=roleCache[plr.Name]
+if data then return data end
+for _,v in pairs(game:GetDescendants()) do
+if v.Name=="GetPlayerData" and v:IsA("RemoteFunction") then
+local result=pcall(function() return v:InvokeServer() end)
+if result and type(result)=="table" then
+for name,info in pairs(result) do
+if type(info)=="table" and not info.Dead then
+roleCache[name]=info.Role or "Innocent"
+end
+end
+end
+break
+end
+end
+return roleCache[plr.Name] or "Innocent"
+end
+
+local function getRoleColor(plr)
+local role=getPlayerRole(plr)
+if role=="Murderer" then return Color3.fromHSV(Settings.MurdererHue/360,1,1) end
+if role=="Sheriff" or role=="Hero" then return Color3.fromHSV(Settings.SheriffHue/360,1,1) end
+return Color3.fromHSV(Settings.InnocentHue/360,1,1)
+end
+
+local function getClosestTarget()
+local closest,dist=nil,math.huge
+local origin=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+if not origin then return nil end
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+local target=plr.Character.HumanoidRootPart
+local d=(target.Position-origin.Position).Magnitude
+if d<dist then closest,dist=plr,d end
+end
+end
+return closest
+end
+
+local function getMurderer()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and getPlayerRole(plr)=="Murderer" then return plr end
+end
+return nil
+end
+
+local function getSheriff()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer then
+local role=getPlayerRole(plr)
+if role=="Sheriff" or role=="Hero" then return plr end
+end
+end
+return nil
+end
+
+local function getGunDrop()
+for _,v in pairs(workspace:GetDescendants()) do
+if v.Name=="GunDrop" and v:IsA("BasePart") then return v end
+end
+return nil
+end
+
+local function clearESP()
+for _,obj in pairs(espObjects) do pcall(function() obj:Destroy() end) end
+espObjects={}
+end
+
+local function clearGunESP()
+for _,obj in pairs(gunEspObjects) do pcall(function() obj:Destroy() end) end
+gunEspObjects={}
+end
+
+local function updateChamsESP()
+if not Settings.ChamsESP then return end
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character then
+local char=plr.Character
+local highlight=char:FindFirstChild("ChamsESP")
+if not highlight then
+highlight=Instance.new("Highlight")
+highlight.Name="ChamsESP"
+highlight.Parent=char
+table.insert(espObjects,highlight)
+end
+highlight.FillColor=getRoleColor(plr)
+highlight.OutlineColor=getRoleColor(plr)
+highlight.FillTransparency=Settings.EspFillTransparency/100
+highlight.OutlineTransparency=0.25
+end
+end
+end
+
+local function updateGunESP()
+if not Settings.GunESP then return end
+for _,gun in pairs(workspace:GetDescendants()) do
+if gun.Name=="GunDrop" and gun:IsA("BasePart") and not gun:FindFirstChild("GunESP") then
+local highlight=Instance.new("Highlight")
+highlight.Name="GunESP"
+highlight.FillColor=Color3.fromHSV(Settings.GunHue/360,1,1)
+highlight.OutlineColor=Color3.fromHSV(Settings.GunHue/360,1,1)
+highlight.FillTransparency=Settings.GunEspFillTransparency/100
+highlight.Parent=gun
+table.insert(gunEspObjects,highlight)
+local billboard=Instance.new("BillboardGui")
+billboard.Name="GunESP"
+billboard.Size=UDim2.new(0,120,0,20)
+billboard.StudsOffset=Vector3.new(0,2,0)
+billboard.AlwaysOnTop=true
+billboard.Enabled=Settings.GunTextESP
+billboard.Parent=gun
+table.insert(gunEspObjects,billboard)
+local label=Instance.new("TextLabel",billboard)
+label.Size=UDim2.new(1,0,1,0)
+label.BackgroundTransparency=1
+label.Text="Gun Drop"
+label.TextColor3=Color3.fromRGB(210,190,255)
+label.Font=Enum.Font.GothamBold
+label.TextScaled=true
+end
+end
+end
+
+local function enableXray()
+Settings.Xray=true
+for _,part in pairs(workspace:GetDescendants()) do
+if part:IsA("BasePart") and not part:IsDescendantOf(LocalPlayer.Character) then
+if not xrayParts[part] then xrayParts[part]=part.LocalTransparencyModifier end
+part.LocalTransparencyModifier=0.65
+end
+end
+end
+
+local function disableXray()
+Settings.Xray=false
+for part,orig in pairs(xrayParts) do
+pcall(function()
+if part and part.Parent then part.LocalTransparencyModifier=orig end
+end)
+end
+xrayParts={}
+end
+
+local function toggleFreecam(state)
+Settings.Freecam=state
+if freecamPart then freecamPart:Destroy() freecamPart=nil end
+if not state then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then Camera.CameraSubject=hum end
+end
+return
+end
+freecamPart=Instance.new("Part")
+freecamPart.Anchored=true
+freecamPart.CanCollide=false
+freecamPart.Transparency=1
+freecamPart.Parent=workspace
+freecamPart.CFrame=Camera.CFrame
+Camera.CameraType=Enum.CameraType.Scriptable
+end
+
+local function toggleFly(state)
+Settings.Fly=state
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum then return end
+if flyBV then flyBV:Destroy() end
+if flyBG then flyBG:Destroy() end
+flyBV=nil
+flyBG=nil
+if state then
+hum.PlatformStand=true
+flyBG=Instance.new("BodyGyro")
+flyBG.P=90000
+flyBG.MaxTorque=Vector3.new(9e9,9e9,9e9)
+flyBG.CFrame=root.CFrame
+flyBG.Parent=root
+flyBV=Instance.new("BodyVelocity")
+flyBV.Velocity=Vector3.new(0,0.1,0)
+flyBV.MaxForce=Vector3.new(9e9,9e9,9e9)
+flyBV.Parent=root
+else
+hum.PlatformStand=false
+end
+end
+
+local function toggleNoclip(state)
+Settings.Noclip=state
+if noclipConnection then noclipConnection:Disconnect() end
+if not state then return end
+noclipConnection=RunService.Stepped:Connect(function()
+local char=LocalPlayer.Character
+if not char then return end
+for _,part in pairs(char:GetDescendants()) do
+if part:IsA("BasePart") and part.CanCollide then part.CanCollide=false end
+end
+end)
+end
+
+local function antiFlingLoop()
+while Settings.AntiFling and task.wait(0.1) do
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character then
+for _,part in pairs(plr.Character:GetDescendants()) do
+if part:IsA("BasePart") and part.CanCollide then part.CanCollide=false end
+end
+end
+end
+end
+end
+
+local function toggleAntiAFK(state)
+Settings.AntiAFK=state
+if afkConnection then afkConnection:Disconnect() end
+if not state then return end
+afkConnection=LocalPlayer.Idled:Connect(function()
+VirtualUser:CaptureController()
+VirtualUser:ClickButton2(Vector2.new())
+end)
+end
+
+local function autoGrabGun()
+if not Settings.AutoGrab then return end
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+if not root then return end
+local gun=getGunDrop()
+if gun then
+root.CFrame=gun.CFrame+Vector3.new(0,2,0)
+task.wait(0.25)
+root.CFrame=root.CFrame
+end
+end
+local function autoShootLoop()
+while Settings.AutoShoot and task.wait(0.05) do
+local char=LocalPlayer.Character
+if not char then continue end
+local gun=char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
+if not gun then continue end
+local murderer=getMurderer()
+if murderer and murderer.Character then
+local target=murderer.Character:FindFirstChild("Head")
+if target then
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,target.Position)
+gun:Activate()
+end
+end
+end
+end
+
+local function aimbotLoop()
+while Settings.AimAssist and task.wait() do
+local target=getClosestTarget()
+if not target or not target.Character then continue end
+local part=target.Character:FindFirstChild(Settings.AimTarget=="Torso" and "HumanoidRootPart" or "Head")
+if part then
+if Settings.AimPrediction then
+local velocity=part.AssemblyLinearVelocity
+local dist=(part.Position-Camera.CFrame.Position).Magnitude
+local pred=part.Position+velocity*(dist/Settings.AimPredictionValue)
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,pred)
+else
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,part.Position)
+end
+end
+end
+end
+
+local function toggleInfiniteZoom(state)
+Settings.InfiniteZoom=state
+if state then
+LocalPlayer.CameraMaxZoomDistance=Settings.MaxZoom
+LocalPlayer.CameraMinZoomDistance=0.5
+else
+LocalPlayer.CameraMaxZoomDistance=400
+LocalPlayer.CameraMinZoomDistance=0.5
+end
+end
+
+local function toggleMotionBlur(state)
+Settings.MotionBlur=state
+if not motionBlurEffect then
+motionBlurEffect=Instance.new("BlurEffect")
+motionBlurEffect.Parent=game.Lighting
+end
+motionBlurEffect.Size=0
+if not state then return end
+end
+
+local function coinFarmLoop()
+while Settings.CoinFarm and task.wait(0.5) do
+local char=LocalPlayer.Character
+if not char then continue end
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum or hum.Health<=0 then continue end
+local lobby=workspace:FindFirstChild("RegularLobby") or workspace:FindFirstChild("Lobby")
+if lobby and (root.Position-lobby:GetPivot().Position).Magnitude<=120 then continue end
+local coinContainer=nil
+for _,obj in pairs(workspace:GetDescendants()) do
+if obj.Name=="CoinContainer" then coinContainer=obj break end
+end
+if not coinContainer then continue end
+local coins={}
+for _,coin in pairs(coinContainer:GetChildren()) do
+if coin.Name=="Coin_Server" and coin:IsA("BasePart") then table.insert(coins,coin) end
+end
+table.sort(coins,function(a,b)
+return (a.Position-root.Position).Magnitude<(b.Position-root.Position).Magnitude
+end)
+for _,coin in ipairs(coins) do
+if not Settings.CoinFarm then break end
+if not root or not root.Parent then break end
+local speed=Settings.CoinSpeed or 25
+local tween=TweenService:Create(root,TweenInfo.new((root.Position-coin.Position).Magnitude/speed,Enum.EasingStyle.Linear),{CFrame=coin.CFrame})
+tween:Play()
+tween.Completed:Wait()
+task.wait(0.1)
+end
+end
+end
+
+local function orbitLoop()
+while Settings.OrbitDistance>0 and task.wait() do
+if not orbitTarget or not orbitTarget.Character then
+orbitTarget=getMurderer()
+if not orbitTarget then orbitTarget=getSheriff() end
+end
+if orbitTarget and orbitTarget.Character then
+local root=orbitTarget.Character:FindFirstChild("HumanoidRootPart")
+if root then
+orbitAngle=orbitAngle+math.rad(Settings.OrbitSpeed)
+local char=LocalPlayer.Character
+if char then
+local charRoot=char:FindFirstChild("HumanoidRootPart")
+if charRoot then
+charRoot.CFrame=CFrame.new(root.Position)*CFrame.Angles(0,orbitAngle,0)*CFrame.new(0,0,Settings.OrbitDistance)
+end
+end
+end
+end
+end
+end
+
+local function spectatePlayer(plr)
+if spectateConnection then spectateConnection:Disconnect() end
+if not plr or not plr.Character then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then Camera.CameraSubject=hum end
+end
+spectateTarget=nil
+return
+end
+local hum=plr.Character:FindFirstChildOfClass("Humanoid")
+if not hum then return end
+Camera.CameraType=Enum.CameraType.Follow
+Camera.CameraSubject=hum
+spectateTarget=plr
+spectateConnection=RunService.RenderStepped:Connect(function()
+if not spectateTarget or not spectateTarget.Character then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum2=char:FindFirstChildOfClass("Humanoid")
+if hum2 then Camera.CameraSubject=hum2 end
+end
+spectateTarget=nil
+spectateConnection:Disconnect()
+return
+end
+local newHum=spectateTarget.Character:FindFirstChildOfClass("Humanoid")
+if newHum then Camera.CameraSubject=newHum end
+end)
+end
+
+local function teleportToPlayer(plr)
+if not plr or not plr.Character then return end
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+if not root then return end
+local targetRoot=plr.Character:FindFirstChild("HumanoidRootPart")
+if targetRoot then
+root.CFrame=targetRoot.CFrame+Vector3.new(0,3,0)
+end
+end
+
+local function flingPlayer(plr)
+if not plr or not plr.Character then return end
+local char=plr.Character
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum then return end
+root.Velocity=Vector3.new(90000000,900000000,90000000)
+root.RotVelocity=Vector3.new(900000000,900000000,900000000)
+hum:SetStateEnabled(Enum.HumanoidStateType.Seated,false)
+task.wait(0.1)
+local oldPos=root.CFrame
+for i=1,10 do
+if not root or not root.Parent then break end
+root.CFrame=oldPos*CFrame.new(0,math.sin(i*0.5)*2,0)
+task.wait(0.05)
+end
+root.Velocity=Vector3.new(0,0,0)
+root.RotVelocity=Vector3.new(0,0,0)
+if oldFPDH then workspace.FallenPartsDestroyHeight=oldFPDH end
+end
+
+local function loopFlingPlayer(plr)
+if not plr or not plr.Character then return end
+task.spawn(function()
+while Settings.Fly and plr and plr.Character do
+flingPlayer(plr)
+task.wait(0.2)
+end
+end)
+end
+
+local function setGunSound(id)
+Settings.ActiveGunSoundID=id
+local char=LocalPlayer.Character
+if char then
+local gun=char:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then
+sound.SoundId=id
+sound.Volume=Settings.GunVolume
+end
+end
+end
+end
+local backpack=LocalPlayer:FindFirstChild("Backpack")
+if backpack then
+local gun=backpack:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then
+sound.SoundId=id
+sound.Volume=Settings.GunVolume
+end
+end
+end
+end
+end
+
+local function setGunVolume(vol)
+Settings.GunVolume=vol
+local char=LocalPlayer.Character
+if char then
+local gun=char:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then sound.Volume=vol end
+end
+end
+end
+local backpack=LocalPlayer:FindFirstChild("Backpack")
+if backpack then
+local gun=backpack:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then sound.Volume=vol end
+end
+end
+end
+end
+
+local function setCustomCursor(id)
+Settings.CustomCursorID=id
+if id~="" then
+UserInputService.MouseIconEnabled=false
+Mouse.Icon="rbxasset://textures/Blank.png"
+else
+UserInputService.MouseIconEnabled=true
+Mouse.Icon=""
+end
+end
+
+local function setCursorSize(size)
+Settings.CustomCursorSize=size
+end
+
+local function rejoinGame()
+TeleportService:Teleport(game.PlaceId,LocalPlayer)
+end
+
+local function saveSettings()
+if not writefile then return end
+pcall(function()
+writefile("umbra_settings.json",HttpService:JSONEncode(Settings))
+end)
+end
+
+local function loadSettings()
+if not isfile or not readfile then return end
+pcall(function()
+local data=readfile("umbra_settings.json")
+if data then
+local loaded=HttpService:JSONDecode(data)
+for k,v in pairs(loaded) do
+Settings[k]=v
+end
+end
+end)
+end
+
+local function findPlayerByName(name)
+local lower=name:lower()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Name:lower():sub(1,#lower)==lower then return plr end
+end
+return nil
+end
+
+local function setupESPUpdates()
+task.spawn(function()
+while task.wait(0.5) do
+if Settings.ChamsESP then updateChamsESP() end
+if Settings.GunESP then updateGunESP() end
+if Settings.Xray then enableXray() else disableXray() end
+end
+end)
+end
+
+UserInputService.JumpRequest:Connect(function()
+if Settings.InfiniteJump then
+local char=LocalPlayer.Character
+local hum=char and char:FindFirstChildOfClass("Humanoid")
+if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+end
+end)
+
+task.spawn(aimbotLoop)
+task.spawn(autoShootLoop)
+task.spawn(coinFarmLoop)
+task.spawn(antiFlingLoop)
+task.spawn(orbitLoop)
+setupESPUpdates()
+
+RunService.RenderStepped:Connect(function()
+if Settings.Freecam and freecamPart then
+local move=Vector3.zero
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then move=move+Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then move=move-Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then move=move-Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then move=move+Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move=move+Vector3.yAxis end
+if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move=move-Vector3.yAxis end
+if move.Magnitude>0 then freecamPart.CFrame=freecamPart.CFrame+move.Unit*Settings.FreecamSpeed*0.05 end
+Camera.CFrame=freecamPart.CFrame
+end
+
+if Settings.Fly and flyBV and flyBG then
+local char=LocalPlayer.Character
+if char then
+local root=char:FindFirstChild("HumanoidRootPart")
+if root then
+flyBG.CFrame=Camera.CFrame
+local move=Vector3.zero
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then move=move+Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then move=move-Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then move=move-Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then move=move+Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move=move+Vector3.yAxis end
+if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move=move-Vector3.yAxis end
+if move.Magnitude>0 then flyBV.Velocity=move.Unit*Settings.FlySpeed else flyBV.Velocity=Vector3.zero end
+end
+end
+end
+
+if Settings.MotionBlur and motionBlurEffect then
+local lookVec=Camera.CFrame.LookVector
+local blur=math.clamp((lookVec-Camera.CFrame.LookVector).Magnitude*Settings.MotionBlurIntensity,0,24)
+motionBlurEffect.Size=blur
+end
+
+if Settings.PlayerSpinSpeed~=0 then
+local char=LocalPlayer.Character
+if char then
+local root=char:FindFirstChild("HumanoidRootPart")
+if root then root.CFrame=root.CFrame*CFrame.Angles(0,math.rad(Settings.PlayerSpinSpeed),0) end
+end
+end
+
+if Settings.CustomTimeEnabled then game.Lighting.ClockTime=Settings.CustomTime end
+
+if Camera.FieldOfView~=Settings.FOV then Camera.FieldOfView=Settings.FOV end
+end)
+
+RunService.Heartbeat:Connect(function()
+local char=LocalPlayer.Character
+if not char then return end
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then
+if hum.WalkSpeed~=Settings.PlayerSpeed then hum.WalkSpeed=Settings.PlayerSpeed end
+if hum.JumpPower~=Settings.PlayerJump then hum.JumpPower=Settings.PlayerJump end
+end
+end)
+
+UserInputService.InputBegan:Connect(function(input,gameProcessed)
+if gameProcessed then return end
+if input.KeyCode==Settings.HotkeyKey then
+Settings.Freecam=not Settings.Freecam
+toggleFreecam(Settings.Freecam)
+saveSettings()
+end
+if input.KeyCode==Settings.XrayKey then
+Settings.Xray=not Settings.Xray
+saveSettings()
+end
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+if obj.Name=="GunDrop" and obj:IsA("BasePart") and Settings.GunESP then
+task.wait(0.1)
+updateGunESP()
+end
+if obj.Name=="Gun" and Settings.ActiveGunSoundID~="" then
+task.wait(0.1)
+setGunSound(Settings.ActiveGunSoundID)
+end
+end)
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local UserInputService=game:GetService("UserInputService")
+local TweenService=game:GetService("TweenService")
+local TeleportService=game:GetService("TeleportService")
+local HttpService=game:GetService("HttpService")
+local VirtualUser=game:GetService("VirtualUser")
+local Camera=workspace.CurrentCamera
+local LocalPlayer=Players.LocalPlayer
+local Mouse=LocalPlayer:GetMouse()
+
+local Settings={
+ThemeHue=140,HotkeyKey=Enum.KeyCode.RightShift,XrayKey=Enum.KeyCode.X,GuiScale=1,
+SaturationValue=0,ChamsESP=false,RoleESP=false,GunESP=false,GunTextESP=false,
+Xray=false,Freecam=false,FreecamSpeed=50,Noclip=false,Fly=false,AntiFling=false,
+InfiniteZoom=false,InfiniteJump=false,AimAssist=false,AimTarget="Head",
+AimFilter="All",AimOnlyWithGun=false,AimPrediction=false,AimPredictionValue=150,
+AutoGrab=false,AutoShoot=false,AntiAFK=false,MotionBlur=false,
+MotionBlurIntensity=120,MotionBlurThreshold=5,CoinFarm=false,PlayerSpeed=16,
+PlayerJump=50,FlySpeed=50,PlayerSpinSpeed=0,FOV=70,MaxZoom=400,FpsCap=60,
+OrbitSpeed=60,OrbitDistance=10,CustomTime=14,CustomTimeEnabled=false,
+ActiveGunSoundID="",GunVolume=1,CustomCursorID="",CustomCursorSize=32,
+CursorSpin=false,CursorSpinSpeed=15,CursorAngle=false,CursorAngleValue=0,
+EspFillTransparency=100,GunEspFillTransparency=70,InnocentHue=120,
+MurdererHue=0,SheriffHue=240,GunHue=180,CoinSpeed=25,CoinRange=15
+}
+
+local freecamPart=nil
+local flyBV=nil
+local flyBG=nil
+local noclipConnection=nil
+local afkConnection=nil
+local motionBlurEffect=nil
+local orbitTarget=nil
+local orbitAngle=0
+local spectateTarget=nil
+local spectateConnection=nil
+local espObjects={}
+local gunEspObjects={}
+local xrayParts={}
+local oldFPDH=nil
+local roleCache={}
+
+local function getPlayerRole(plr)
+if not plr then return "Innocent" end
+local data=roleCache[plr.Name]
+if data then return data end
+for _,v in pairs(game:GetDescendants()) do
+if v.Name=="GetPlayerData" and v:IsA("RemoteFunction") then
+local result=pcall(function() return v:InvokeServer() end)
+if result and type(result)=="table" then
+for name,info in pairs(result) do
+if type(info)=="table" and not info.Dead then
+roleCache[name]=info.Role or "Innocent"
+end
+end
+end
+break
+end
+end
+return roleCache[plr.Name] or "Innocent"
+end
+
+local function getRoleColor(plr)
+local role=getPlayerRole(plr)
+if role=="Murderer" then return Color3.fromHSV(Settings.MurdererHue/360,1,1) end
+if role=="Sheriff" or role=="Hero" then return Color3.fromHSV(Settings.SheriffHue/360,1,1) end
+return Color3.fromHSV(Settings.InnocentHue/360,1,1)
+end
+
+local function getClosestTarget()
+local closest,dist=nil,math.huge
+local origin=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+if not origin then return nil end
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+local target=plr.Character.HumanoidRootPart
+local d=(target.Position-origin.Position).Magnitude
+if d<dist then closest,dist=plr,d end
+end
+end
+return closest
+end
+
+local function getMurderer()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and getPlayerRole(plr)=="Murderer" then return plr end
+end
+return nil
+end
+
+local function getSheriff()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer then
+local role=getPlayerRole(plr)
+if role=="Sheriff" or role=="Hero" then return plr end
+end
+end
+return nil
+end
+
+local function getGunDrop()
+for _,v in pairs(workspace:GetDescendants()) do
+if v.Name=="GunDrop" and v:IsA("BasePart") then return v end
+end
+return nil
+end
+
+local function clearESP()
+for _,obj in pairs(espObjects) do pcall(function() obj:Destroy() end) end
+espObjects={}
+end
+
+local function clearGunESP()
+for _,obj in pairs(gunEspObjects) do pcall(function() obj:Destroy() end) end
+gunEspObjects={}
+end
+
+local function updateChamsESP()
+if not Settings.ChamsESP then return end
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character then
+local char=plr.Character
+local highlight=char:FindFirstChild("ChamsESP")
+if not highlight then
+highlight=Instance.new("Highlight")
+highlight.Name="ChamsESP"
+highlight.Parent=char
+table.insert(espObjects,highlight)
+end
+highlight.FillColor=getRoleColor(plr)
+highlight.OutlineColor=getRoleColor(plr)
+highlight.FillTransparency=Settings.EspFillTransparency/100
+highlight.OutlineTransparency=0.25
+end
+end
+end
+
+local function updateGunESP()
+if not Settings.GunESP then return end
+for _,gun in pairs(workspace:GetDescendants()) do
+if gun.Name=="GunDrop" and gun:IsA("BasePart") and not gun:FindFirstChild("GunESP") then
+local highlight=Instance.new("Highlight")
+highlight.Name="GunESP"
+highlight.FillColor=Color3.fromHSV(Settings.GunHue/360,1,1)
+highlight.OutlineColor=Color3.fromHSV(Settings.GunHue/360,1,1)
+highlight.FillTransparency=Settings.GunEspFillTransparency/100
+highlight.Parent=gun
+table.insert(gunEspObjects,highlight)
+local billboard=Instance.new("BillboardGui")
+billboard.Name="GunESP"
+billboard.Size=UDim2.new(0,120,0,20)
+billboard.StudsOffset=Vector3.new(0,2,0)
+billboard.AlwaysOnTop=true
+billboard.Enabled=Settings.GunTextESP
+billboard.Parent=gun
+table.insert(gunEspObjects,billboard)
+local label=Instance.new("TextLabel",billboard)
+label.Size=UDim2.new(1,0,1,0)
+label.BackgroundTransparency=1
+label.Text="Gun Drop"
+label.TextColor3=Color3.fromRGB(210,190,255)
+label.Font=Enum.Font.GothamBold
+label.TextScaled=true
+end
+end
+end
+
+local function enableXray()
+Settings.Xray=true
+for _,part in pairs(workspace:GetDescendants()) do
+if part:IsA("BasePart") and not part:IsDescendantOf(LocalPlayer.Character) then
+if not xrayParts[part] then xrayParts[part]=part.LocalTransparencyModifier end
+part.LocalTransparencyModifier=0.65
+end
+end
+end
+
+local function disableXray()
+Settings.Xray=false
+for part,orig in pairs(xrayParts) do
+pcall(function()
+if part and part.Parent then part.LocalTransparencyModifier=orig end
+end)
+end
+xrayParts={}
+end
+
+local function toggleFreecam(state)
+Settings.Freecam=state
+if freecamPart then freecamPart:Destroy() freecamPart=nil end
+if not state then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then Camera.CameraSubject=hum end
+end
+return
+end
+freecamPart=Instance.new("Part")
+freecamPart.Anchored=true
+freecamPart.CanCollide=false
+freecamPart.Transparency=1
+freecamPart.Parent=workspace
+freecamPart.CFrame=Camera.CFrame
+Camera.CameraType=Enum.CameraType.Scriptable
+end
+
+local function toggleFly(state)
+Settings.Fly=state
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum then return end
+if flyBV then flyBV:Destroy() end
+if flyBG then flyBG:Destroy() end
+flyBV=nil
+flyBG=nil
+if state then
+hum.PlatformStand=true
+flyBG=Instance.new("BodyGyro")
+flyBG.P=90000
+flyBG.MaxTorque=Vector3.new(9e9,9e9,9e9)
+flyBG.CFrame=root.CFrame
+flyBG.Parent=root
+flyBV=Instance.new("BodyVelocity")
+flyBV.Velocity=Vector3.new(0,0.1,0)
+flyBV.MaxForce=Vector3.new(9e9,9e9,9e9)
+flyBV.Parent=root
+else
+hum.PlatformStand=false
+end
+end
+
+local function toggleNoclip(state)
+Settings.Noclip=state
+if noclipConnection then noclipConnection:Disconnect() end
+if not state then return end
+noclipConnection=RunService.Stepped:Connect(function()
+local char=LocalPlayer.Character
+if not char then return end
+for _,part in pairs(char:GetDescendants()) do
+if part:IsA("BasePart") and part.CanCollide then part.CanCollide=false end
+end
+end)
+end
+
+local function antiFlingLoop()
+while Settings.AntiFling and task.wait(0.1) do
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Character then
+for _,part in pairs(plr.Character:GetDescendants()) do
+if part:IsA("BasePart") and part.CanCollide then part.CanCollide=false end
+end
+end
+end
+end
+end
+
+local function toggleAntiAFK(state)
+Settings.AntiAFK=state
+if afkConnection then afkConnection:Disconnect() end
+if not state then return end
+afkConnection=LocalPlayer.Idled:Connect(function()
+VirtualUser:CaptureController()
+VirtualUser:ClickButton2(Vector2.new())
+end)
+end
+
+local function autoGrabGun()
+if not Settings.AutoGrab then return end
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+if not root then return end
+local gun=getGunDrop()
+if gun then
+root.CFrame=gun.CFrame+Vector3.new(0,2,0)
+task.wait(0.25)
+root.CFrame=root.CFrame
+end
+end
+local function autoShootLoop()
+while Settings.AutoShoot and task.wait(0.05) do
+local char=LocalPlayer.Character
+if not char then continue end
+local gun=char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
+if not gun then continue end
+local murderer=getMurderer()
+if murderer and murderer.Character then
+local target=murderer.Character:FindFirstChild("Head")
+if target then
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,target.Position)
+gun:Activate()
+end
+end
+end
+end
+
+local function aimbotLoop()
+while Settings.AimAssist and task.wait() do
+local target=getClosestTarget()
+if not target or not target.Character then continue end
+local part=target.Character:FindFirstChild(Settings.AimTarget=="Torso" and "HumanoidRootPart" or "Head")
+if part then
+if Settings.AimPrediction then
+local velocity=part.AssemblyLinearVelocity
+local dist=(part.Position-Camera.CFrame.Position).Magnitude
+local pred=part.Position+velocity*(dist/Settings.AimPredictionValue)
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,pred)
+else
+Camera.CFrame=CFrame.new(Camera.CFrame.Position,part.Position)
+end
+end
+end
+end
+
+local function toggleInfiniteZoom(state)
+Settings.InfiniteZoom=state
+if state then
+LocalPlayer.CameraMaxZoomDistance=Settings.MaxZoom
+LocalPlayer.CameraMinZoomDistance=0.5
+else
+LocalPlayer.CameraMaxZoomDistance=400
+LocalPlayer.CameraMinZoomDistance=0.5
+end
+end
+
+local function toggleMotionBlur(state)
+Settings.MotionBlur=state
+if not motionBlurEffect then
+motionBlurEffect=Instance.new("BlurEffect")
+motionBlurEffect.Parent=game.Lighting
+end
+motionBlurEffect.Size=0
+if not state then return end
+end
+
+local function coinFarmLoop()
+while Settings.CoinFarm and task.wait(0.5) do
+local char=LocalPlayer.Character
+if not char then continue end
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum or hum.Health<=0 then continue end
+local lobby=workspace:FindFirstChild("RegularLobby") or workspace:FindFirstChild("Lobby")
+if lobby and (root.Position-lobby:GetPivot().Position).Magnitude<=120 then continue end
+local coinContainer=nil
+for _,obj in pairs(workspace:GetDescendants()) do
+if obj.Name=="CoinContainer" then coinContainer=obj break end
+end
+if not coinContainer then continue end
+local coins={}
+for _,coin in pairs(coinContainer:GetChildren()) do
+if coin.Name=="Coin_Server" and coin:IsA("BasePart") then table.insert(coins,coin) end
+end
+table.sort(coins,function(a,b)
+return (a.Position-root.Position).Magnitude<(b.Position-root.Position).Magnitude
+end)
+for _,coin in ipairs(coins) do
+if not Settings.CoinFarm then break end
+if not root or not root.Parent then break end
+local speed=Settings.CoinSpeed or 25
+local tween=TweenService:Create(root,TweenInfo.new((root.Position-coin.Position).Magnitude/speed,Enum.EasingStyle.Linear),{CFrame=coin.CFrame})
+tween:Play()
+tween.Completed:Wait()
+task.wait(0.1)
+end
+end
+end
+
+local function orbitLoop()
+while Settings.OrbitDistance>0 and task.wait() do
+if not orbitTarget or not orbitTarget.Character then
+orbitTarget=getMurderer()
+if not orbitTarget then orbitTarget=getSheriff() end
+end
+if orbitTarget and orbitTarget.Character then
+local root=orbitTarget.Character:FindFirstChild("HumanoidRootPart")
+if root then
+orbitAngle=orbitAngle+math.rad(Settings.OrbitSpeed)
+local char=LocalPlayer.Character
+if char then
+local charRoot=char:FindFirstChild("HumanoidRootPart")
+if charRoot then
+charRoot.CFrame=CFrame.new(root.Position)*CFrame.Angles(0,orbitAngle,0)*CFrame.new(0,0,Settings.OrbitDistance)
+end
+end
+end
+end
+end
+end
+
+local function spectatePlayer(plr)
+if spectateConnection then spectateConnection:Disconnect() end
+if not plr or not plr.Character then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then Camera.CameraSubject=hum end
+end
+spectateTarget=nil
+return
+end
+local hum=plr.Character:FindFirstChildOfClass("Humanoid")
+if not hum then return end
+Camera.CameraType=Enum.CameraType.Follow
+Camera.CameraSubject=hum
+spectateTarget=plr
+spectateConnection=RunService.RenderStepped:Connect(function()
+if not spectateTarget or not spectateTarget.Character then
+Camera.CameraType=Enum.CameraType.Custom
+local char=LocalPlayer.Character
+if char then
+local hum2=char:FindFirstChildOfClass("Humanoid")
+if hum2 then Camera.CameraSubject=hum2 end
+end
+spectateTarget=nil
+spectateConnection:Disconnect()
+return
+end
+local newHum=spectateTarget.Character:FindFirstChildOfClass("Humanoid")
+if newHum then Camera.CameraSubject=newHum end
+end)
+end
+
+local function teleportToPlayer(plr)
+if not plr or not plr.Character then return end
+local char=LocalPlayer.Character
+if not char then return end
+local root=char:FindFirstChild("HumanoidRootPart")
+if not root then return end
+local targetRoot=plr.Character:FindFirstChild("HumanoidRootPart")
+if targetRoot then
+root.CFrame=targetRoot.CFrame+Vector3.new(0,3,0)
+end
+end
+
+local function flingPlayer(plr)
+if not plr or not plr.Character then return end
+local char=plr.Character
+local root=char:FindFirstChild("HumanoidRootPart")
+local hum=char:FindFirstChildOfClass("Humanoid")
+if not root or not hum then return end
+root.Velocity=Vector3.new(90000000,900000000,90000000)
+root.RotVelocity=Vector3.new(900000000,900000000,900000000)
+hum:SetStateEnabled(Enum.HumanoidStateType.Seated,false)
+task.wait(0.1)
+local oldPos=root.CFrame
+for i=1,10 do
+if not root or not root.Parent then break end
+root.CFrame=oldPos*CFrame.new(0,math.sin(i*0.5)*2,0)
+task.wait(0.05)
+end
+root.Velocity=Vector3.new(0,0,0)
+root.RotVelocity=Vector3.new(0,0,0)
+if oldFPDH then workspace.FallenPartsDestroyHeight=oldFPDH end
+end
+
+local function loopFlingPlayer(plr)
+if not plr or not plr.Character then return end
+task.spawn(function()
+while Settings.Fly and plr and plr.Character do
+flingPlayer(plr)
+task.wait(0.2)
+end
+end)
+end
+
+local function setGunSound(id)
+Settings.ActiveGunSoundID=id
+local char=LocalPlayer.Character
+if char then
+local gun=char:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then
+sound.SoundId=id
+sound.Volume=Settings.GunVolume
+end
+end
+end
+end
+local backpack=LocalPlayer:FindFirstChild("Backpack")
+if backpack then
+local gun=backpack:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then
+sound.SoundId=id
+sound.Volume=Settings.GunVolume
+end
+end
+end
+end
+end
+
+local function setGunVolume(vol)
+Settings.GunVolume=vol
+local char=LocalPlayer.Character
+if char then
+local gun=char:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then sound.Volume=vol end
+end
+end
+end
+local backpack=LocalPlayer:FindFirstChild("Backpack")
+if backpack then
+local gun=backpack:FindFirstChild("Gun")
+if gun then
+local handle=gun:FindFirstChild("Handle")
+if handle then
+local sound=handle:FindFirstChild("Gunshot")
+if sound and sound:IsA("Sound") then sound.Volume=vol end
+end
+end
+end
+end
+
+local function setCustomCursor(id)
+Settings.CustomCursorID=id
+if id~="" then
+UserInputService.MouseIconEnabled=false
+Mouse.Icon="rbxasset://textures/Blank.png"
+else
+UserInputService.MouseIconEnabled=true
+Mouse.Icon=""
+end
+end
+
+local function setCursorSize(size)
+Settings.CustomCursorSize=size
+end
+
+local function rejoinGame()
+TeleportService:Teleport(game.PlaceId,LocalPlayer)
+end
+
+local function saveSettings()
+if not writefile then return end
+pcall(function()
+writefile("umbra_settings.json",HttpService:JSONEncode(Settings))
+end)
+end
+
+local function loadSettings()
+if not isfile or not readfile then return end
+pcall(function()
+local data=readfile("umbra_settings.json")
+if data then
+local loaded=HttpService:JSONDecode(data)
+for k,v in pairs(loaded) do
+Settings[k]=v
+end
+end
+end)
+end
+
+local function findPlayerByName(name)
+local lower=name:lower()
+for _,plr in pairs(Players:GetPlayers()) do
+if plr~=LocalPlayer and plr.Name:lower():sub(1,#lower)==lower then return plr end
+end
+return nil
+end
+
+local function setupESPUpdates()
+task.spawn(function()
+while task.wait(0.5) do
+if Settings.ChamsESP then updateChamsESP() end
+if Settings.GunESP then updateGunESP() end
+if Settings.Xray then enableXray() else disableXray() end
+end
+end)
+end
+
+UserInputService.JumpRequest:Connect(function()
+if Settings.InfiniteJump then
+local char=LocalPlayer.Character
+local hum=char and char:FindFirstChildOfClass("Humanoid")
+if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+end
+end)
+
+task.spawn(aimbotLoop)
+task.spawn(autoShootLoop)
+task.spawn(coinFarmLoop)
+task.spawn(antiFlingLoop)
+task.spawn(orbitLoop)
+setupESPUpdates()
+
+RunService.RenderStepped:Connect(function()
+if Settings.Freecam and freecamPart then
+local move=Vector3.zero
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then move=move+Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then move=move-Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then move=move-Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then move=move+Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move=move+Vector3.yAxis end
+if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move=move-Vector3.yAxis end
+if move.Magnitude>0 then freecamPart.CFrame=freecamPart.CFrame+move.Unit*Settings.FreecamSpeed*0.05 end
+Camera.CFrame=freecamPart.CFrame
+end
+
+if Settings.Fly and flyBV and flyBG then
+local char=LocalPlayer.Character
+if char then
+local root=char:FindFirstChild("HumanoidRootPart")
+if root then
+flyBG.CFrame=Camera.CFrame
+local move=Vector3.zero
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then move=move+Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then move=move-Camera.CFrame.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then move=move-Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then move=move+Camera.CFrame.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move=move+Vector3.yAxis end
+if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move=move-Vector3.yAxis end
+if move.Magnitude>0 then flyBV.Velocity=move.Unit*Settings.FlySpeed else flyBV.Velocity=Vector3.zero end
+end
+end
+end
+
+if Settings.MotionBlur and motionBlurEffect then
+local lookVec=Camera.CFrame.LookVector
+local blur=math.clamp((lookVec-Camera.CFrame.LookVector).Magnitude*Settings.MotionBlurIntensity,0,24)
+motionBlurEffect.Size=blur
+end
+
+if Settings.PlayerSpinSpeed~=0 then
+local char=LocalPlayer.Character
+if char then
+local root=char:FindFirstChild("HumanoidRootPart")
+if root then root.CFrame=root.CFrame*CFrame.Angles(0,math.rad(Settings.PlayerSpinSpeed),0) end
+end
+end
+
+if Settings.CustomTimeEnabled then game.Lighting.ClockTime=Settings.CustomTime end
+
+if Camera.FieldOfView~=Settings.FOV then Camera.FieldOfView=Settings.FOV end
+end)
+
+RunService.Heartbeat:Connect(function()
+local char=LocalPlayer.Character
+if not char then return end
+local hum=char:FindFirstChildOfClass("Humanoid")
+if hum then
+if hum.WalkSpeed~=Settings.PlayerSpeed then hum.WalkSpeed=Settings.PlayerSpeed end
+if hum.JumpPower~=Settings.PlayerJump then hum.JumpPower=Settings.PlayerJump end
+end
+end)
+
+UserInputService.InputBegan:Connect(function(input,gameProcessed)
+if gameProcessed then return end
+if input.KeyCode==Settings.HotkeyKey then
+Settings.Freecam=not Settings.Freecam
+toggleFreecam(Settings.Freecam)
+saveSettings()
+end
+if input.KeyCode==Settings.XrayKey then
+Settings.Xray=not Settings.Xray
+saveSettings()
+end
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+if obj.Name=="GunDrop" and obj:IsA("BasePart") and Settings.GunESP then
+task.wait(0.1)
+updateGunESP()
+end
+if obj.Name=="Gun" and Settings.ActiveGunSoundID~="" then
+task.wait(0.1)
+setGunSound(Settings.ActiveGunSoundID)
+end
+end)
+    local espTab = tabFrames["ESP"]
+    createToggle(espTab, "Chams ESP", "ChamsESP", function(state)
+        Settings.ChamsESP = state
+        if not state then clearESP() end
+    end)
+    createToggle(espTab, "Role ESP", "RoleESP")
+    createToggle(espTab, "Gun ESP", "GunESP", function(state)
+        Settings.GunESP = state
+        if not state then clearGunESP() end
+    end)
+    createToggle(espTab, "Gun Text ESP", "GunTextESP")
+    createToggle(espTab, "Xray", "Xray")
+    createSlider(espTab, "ESP Transparency", "EspFillTransparency", 0, 100, 1)
+    createSlider(espTab, "Gun ESP Transparency", "GunEspFillTransparency", 0, 100, 1)
+    createSlider(espTab, "Innocent Hue", "InnocentHue", 0, 360, 1)
+    createSlider(espTab, "Murderer Hue", "MurdererHue", 0, 360, 1)
+    createSlider(espTab, "Sheriff Hue", "SheriffHue", 0, 360, 1)
+    createSlider(espTab, "Gun Hue", "GunHue", 0, 360, 1)
+
+    local combatTab = tabFrames["Combat"]
+    createToggle(combatTab, "Aim Assist", "AimAssist", function(state)
+        Settings.AimAssist = state
+    end)
+    createToggle(combatTab, "Aim Prediction", "AimPrediction")
+    createSlider(combatTab, "Prediction Value", "AimPredictionValue", 10, 500, 5)
+    createToggle(combatTab, "Auto Shoot", "AutoShoot")
+    createToggle(combatTab, "Auto Grab Gun", "AutoGrab")
+    createToggle(combatTab, "Aim Only With Gun", "AimOnlyWithGun")
+
+    local teleportTab = tabFrames["Teleport"]
+    local teleportInput = createTextInput(teleportTab, "Teleport to", "Enter name...", "", function(text)
+        local plr = findPlayerByName(text)
+        if plr then teleportToPlayer(plr) end
+    end)
+    local spectateInput = createTextInput(teleportTab, "Spectate", "Enter name...", "", function(text)
+        local plr = findPlayerByName(text)
+        if plr then spectatePlayer(plr) end
+    end)
+
+    local trollingTab = tabFrames["Trolling"]
+    local flingInput = createTextInput(trollingTab, "Fling Player", "Enter name...", "", function(text)
+        local plr = findPlayerByName(text)
+        if plr then flingPlayer(plr) end
+    end)
+    local loopFlingInput = createTextInput(trollingTab, "Loop Fling", "Enter name...", "", function(text)
+        local plr = findPlayerByName(text)
+        if plr then loopFlingPlayer(plr) end
+    end)
+
+    local playerTab = tabFrames["Player"]
+    createSlider(playerTab, "Walk Speed", "PlayerSpeed", 10, 100, 1)
+    createSlider(playerTab, "Jump Power", "PlayerJump", 20, 200, 1)
+    createSlider(playerTab, "Fly Speed", "FlySpeed", 10, 200, 1)
+    createSlider(playerTab, "Spin Speed", "PlayerSpinSpeed", 0, 360, 1)
+    createToggle(playerTab, "Infinite Jump", "InfiniteJump")
+    createToggle(playerTab, "Noclip", "Noclip")
+    createToggle(playerTab, "Fly", "Fly")
+    createToggle(playerTab, "Anti-Fling", "AntiFling")
+    createToggle(playerTab, "Anti-AFK", "AntiAFK")
+    createHotkey(playerTab, "Menu Hotkey", "HotkeyKey")
+
+    local graphicsTab = tabFrames["Graphics"]
+    createSlider(graphicsTab, "FOV", "FOV", 30, 120, 1)
+    createSlider(graphicsTab, "Max Zoom", "MaxZoom", 50, 2000, 10)
+    createToggle(graphicsTab, "Infinite Zoom", "InfiniteZoom")
+    createToggle(graphicsTab, "Motion Blur", "MotionBlur", function(state)
+        toggleMotionBlur(state)
+    end)
+    createSlider(graphicsTab, "Motion Blur Intensity", "MotionBlurIntensity", 0, 300, 5)
+    createSlider(graphicsTab, "Motion Blur Threshold", "MotionBlurThreshold", 0, 50, 1)
+    createSlider(graphicsTab, "Saturation", "SaturationValue", -100, 100, 1)
+    createSlider(graphicsTab, "Gui Scale", "GuiScale", 0.5, 2, 0.05)
+    createToggle(graphicsTab, "Freecam", "Freecam", function(state)
+        toggleFreecam(state)
+    end)
+    createSlider(graphicsTab, "Freecam Speed", "FreecamSpeed", 10, 200, 1)
+
+    local miscTab = tabFrames["Misc"]
+    createHotkey(miscTab, "Xray Key", "XrayKey")
+    createToggle(miscTab, "Custom Time", "CustomTimeEnabled")
+    createSlider(miscTab, "Time", "CustomTime", 0, 24, 0.5)
+    createTextInput(miscTab, "Cursor ID", "Enter ID...", "CustomCursorID", function(text)
+        setCustomCursor(text)
+    end)
+    createSlider(miscTab, "Cursor Size", "CustomCursorSize", 16, 128, 1)
+    createToggle(miscTab, "Cursor Spin", "CursorSpin")
+    createSlider(miscTab, "Cursor Spin Speed", "CursorSpinSpeed", 1, 100, 1)
+    createToggle(miscTab, "Cursor Angle", "CursorAngle")
+    createSlider(miscTab, "Cursor Angle", "CursorAngleValue", 0, 360, 1)
+    createTextInput(miscTab, "Gun Sound ID", "Enter ID...", "ActiveGunSoundID", function(text)
+        setGunSound("rbxassetid://" .. text:gsub("%D", ""))
+    end)
+    createSlider(miscTab, "Gun Volume", "GunVolume", 0, 10, 0.1, function(val)
+        setGunVolume(val)
+    end)
+    createButton(miscTab, "Reset Gun Sound", function()
+        setGunSound("rbxassetid://4800558317")
+        Settings.ActiveGunSoundID = ""
+        saveSettings()
+    end)
+
+    local autofarmTab = tabFrames["Autofarm"]
+    createToggle(autofarmTab, "Coin Farm", "CoinFarm")
+    createSlider(autofarmTab, "Coin Speed", "CoinSpeed", 10, 50, 1)
+    createSlider(autofarmTab, "Coin Range", "CoinRange", 10, 50, 1)
+
+    local funTab = tabFrames["Fun"]
+    createSlider(funTab, "Orbit Speed", "OrbitSpeed", 10, 200, 1)
+    createSlider(funTab, "Orbit Distance", "OrbitDistance", 0, 50, 1)
+    createButton(funTab, "Rejoin", function()
+        rejoinGame()
+    end)
+
+    tabButtons["ESP"].MouseButton1Click:Fire()
+
+    local draggingMain = false
+    local dragStart = Vector2.new()
+    local frameStart = UDim2.new()
+
+    mainFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingMain = true
+            dragStart = input.Position
+            frameStart = mainFrame.Position
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingMain = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if draggingMain and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            mainFrame.Position = UDim2.new(
+                frameStart.X.Scale,
+                frameStart.X.Offset + delta.X,
+                frameStart.Y.Scale,
+                frameStart.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    local minimized = false
+    toggleBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            mainFrame.Size = UDim2.new(0, 560, 0, 36)
+            toggleBtn.Text = "+"
+        else
+            mainFrame.Size = UDim2.new(0, 560, 0, 340)
+            toggleBtn.Text = "−"
+        end
+    end)
+
+    return mainFrame
+end
+
+loadSettings()
+toggleFly(Settings.Fly)
+toggleNoclip(Settings.Noclip)
+toggleAntiAFK(Settings.AntiAFK)
+toggleFreecam(Settings.Freecam)
+toggleInfiniteZoom(Settings.InfiniteZoom)
+toggleMotionBlur(Settings.MotionBlur)
+setCustomCursor(Settings.CustomCursorID)
+if Settings.ActiveGunSoundID~="" then setGunSound(Settings.ActiveGunSoundID) end
+if Settings.FpsCap and setfpscap then setfpscap(Settings.FpsCap) end
+Camera.FieldOfView=Settings.FOV
+oldFPDH=workspace.FallenPartsDestroyHeight
+CreateGUI()
+print("UmbraHub loaded")
