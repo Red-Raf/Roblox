@@ -1,0 +1,324 @@
+-- aimbot (lite) подходит для всех плейсов (работает только на игроков!)
+
+-- [[ МАСКИРОВКА ]] --
+local _G = getfenv and getfenv() or _ENV
+local g = game; local p = g:GetService("Players"); local rs = g:GetService("RunService"); local uis = g:GetService("UserInputService"); local ws = g:GetService("Workspace"); local cam = ws.CurrentCamera; local lplr = p.LocalPlayer; local mouse = lplr:GetMouse()
+
+-- [[ ОБФУСЦИРОВАННЫЕ СТРОКИ ]] --
+local function _(s) return s:reverse():gsub("_", ""):gsub("|", "") end
+local function __(s) return (s:gsub(".", function(c) return string.char(string.byte(c) - 1) end)) end
+local function ___(s) return (s:gsub(".", function(c) return string.char(string.byte(c) + 1) end)) end
+
+-- [[ НАСТРОЙКИ ]] --
+local cfg = {
+    enabled = false,
+    fov = 120,
+    hideFov = false,
+    smoothness = 0.3,
+    maxDist = 200
+}
+
+-- [[ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ]] --
+local function isAlive(char)
+    if not char then return false end
+    local h = char:FindFirstChildOfClass("Humanoid")
+    return h and h.Health > 0
+end
+
+local function isVisible(from, to, ignore)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {ignore or {}}
+    local result = ws:Raycast(from, (to - from).Unit * (to - from).Magnitude, params)
+    return not result or result.Instance:IsDescendantOf(ignore) or result.Distance >= (to - from).Magnitude
+end
+
+local function getClosestTarget()
+    local plrChar = lplr.Character
+    if not plrChar then return nil end
+    local hrp = plrChar:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local from = hrp.Position
+    local best = nil
+    local bestDist = math.huge
+    
+    for _, player in ipairs(p:GetPlayers()) do
+        if player ~= lplr then
+            local char = player.Character
+            if char and isAlive(char) then
+                local targetPart = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+                if targetPart then
+                    local pos = targetPart.Position
+                    local dist = (pos - from).Magnitude
+                    if dist <= cfg.maxDist then
+                        local screenPos, onScreen = cam:WorldToViewportPoint(pos)
+                        if onScreen then
+                            local dx = screenPos.X - (cam.ViewportSize.X / 2)
+                            local dy = screenPos.Y - (cam.ViewportSize.Y / 2)
+                            local distToCenter = math.sqrt(dx*dx + dy*dy)
+                            if distToCenter <= cfg.fov and distToCenter < bestDist then
+                                if isVisible(from, pos, plrChar) then
+                                    best = targetPart
+                                    bestDist = distToCenter
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- [[ АИМБОТ (ЛЁГКИЙ) ]] --
+local function aimbot()
+    if not cfg.enabled then return end
+    local target = getClosestTarget()
+    if target then
+        local targetPos = target.Position
+        local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
+        cam.CFrame = cam.CFrame:Lerp(lookAt, cfg.smoothness)
+    end
+end
+
+-- [[ GUI ]] --
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimbotUI_" .. math.random(1000, 9999)
+screenGui.Parent = lplr:WaitForChild("PlayerGui")
+
+-- [[ КНОПКА (ПЕРЕТАСКИВАЕМАЯ) ]] --
+local toggleBtn = Instance.new("ImageButton")
+toggleBtn.Size = UDim2.new(0, 50, 0, 50)
+toggleBtn.Position = UDim2.new(0, 20, 0, 100)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+toggleBtn.BackgroundTransparency = 0.2
+toggleBtn.Image = "rbxassetid://7077614225"
+toggleBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.ImageRectOffset = Vector2.new(0, 0)
+toggleBtn.ImageRectSize = Vector2.new(200, 200)
+toggleBtn.ClipsDescendants = false
+toggleBtn.Parent = screenGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(1, 0)
+btnCorner.Parent = toggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(100, 100, 120)
+btnStroke.Thickness = 1.5
+btnStroke.Parent = toggleBtn
+
+-- [[ ПЕРЕТАСКИВАНИЕ КНОПКИ ]] --
+local drag = {active = false, startPos = nil, startMouse = nil}
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        drag.active = true
+        drag.startPos = toggleBtn.Position
+        drag.startMouse = input.Position
+    end
+end)
+toggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        drag.active = false
+    end
+end)
+uis.InputChanged:Connect(function(input)
+    if drag.active and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - drag.startMouse
+        toggleBtn.Position = UDim2.new(
+            drag.startPos.X.Scale,
+            drag.startPos.X.Offset + delta.X,
+            drag.startPos.Y.Scale,
+            drag.startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- [[ МЕНЮ (ОТКРЫВАЕТСЯ/ЗАКРЫВАЕТСЯ ПО КНОПКЕ) ]] --
+local menuOpen = false
+local menu = Instance.new("Frame")
+menu.Size = UDim2.new(0, 200, 0, 180)
+menu.Position = UDim2.new(0.5, -100, 0.5, -90)
+menu.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+menu.BackgroundTransparency = 0.15
+menu.Visible = false
+menu.Parent = screenGui
+
+local menuCorner = Instance.new("UICorner")
+menuCorner.CornerRadius = UDim.new(0, 12)
+menuCorner.Parent = menu
+
+local menuStroke = Instance.new("UIStroke")
+menuStroke.Color = Color3.fromRGB(80, 80, 100)
+menuStroke.Thickness = 1.5
+menuStroke.Parent = menu
+
+-- [[ ЗАГОЛОВОК ]] --
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "◈ AIMBOT"
+title.TextColor3 = Color3.fromRGB(220, 220, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Parent = menu
+
+-- [[ ТОГГЛ АИМБОТ ]] --
+local aimToggle = Instance.new("TextButton")
+aimToggle.Size = UDim2.new(1, -20, 0, 30)
+aimToggle.Position = UDim2.new(0, 10, 0, 35)
+aimToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+aimToggle.Text = "AIMBOT: OFF"
+aimToggle.TextColor3 = Color3.fromRGB(200, 200, 220)
+aimToggle.Font = Enum.Font.GothamBold
+aimToggle.TextSize = 14
+aimToggle.Parent = menu
+
+local aimCorner = Instance.new("UICorner")
+aimCorner.CornerRadius = UDim.new(0, 6)
+aimCorner.Parent = aimToggle
+
+aimToggle.MouseButton1Click:Connect(function()
+    cfg.enabled = not cfg.enabled
+    aimToggle.Text = cfg.enabled and "AIMBOT: ON" or "AIMBOT: OFF"
+    aimToggle.BackgroundColor3 = cfg.enabled and Color3.fromRGB(30, 80, 50) or Color3.fromRGB(40, 40, 50)
+end)
+
+-- [[ FOV ПОЛЗУНОК ]] --
+local fovLabel = Instance.new("TextLabel")
+fovLabel.Size = UDim2.new(0.6, 0, 0, 20)
+fovLabel.Position = UDim2.new(0, 10, 0, 70)
+fovLabel.BackgroundTransparency = 1
+fovLabel.Text = "FOV: " .. cfg.fov
+fovLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+fovLabel.Font = Enum.Font.Gotham
+fovLabel.TextSize = 13
+fovLabel.TextXAlignment = Enum.TextXAlignment.Left
+fovLabel.Parent = menu
+
+local fovSlider = Instance.new("Frame")
+fovSlider.Size = UDim2.new(0.6, 0, 0, 4)
+fovSlider.Position = UDim2.new(0, 10, 0, 92)
+fovSlider.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+fovSlider.Parent = menu
+
+local fovSliderCorner = Instance.new("UICorner")
+fovSliderCorner.CornerRadius = UDim.new(1, 0)
+fovSliderCorner.Parent = fovSlider
+
+local fovFill = Instance.new("Frame")
+fovFill.Size = UDim2.new(cfg.fov / 300, 0, 1, 0)
+fovFill.BackgroundColor3 = Color3.fromRGB(150, 150, 255)
+fovFill.Parent = fovSlider
+
+local fovFillCorner = Instance.new("UICorner")
+fovFillCorner.CornerRadius = UDim.new(1, 0)
+fovFillCorner.Parent = fovFill
+
+local function updateFovDisplay()
+    fovLabel.Text = "FOV: " .. cfg.fov
+    fovFill.Size = UDim2.new(cfg.fov / 300, 0, 1, 0)
+end
+
+local fovDrag = {active = false}
+fovSlider.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        fovDrag.active = true
+    end
+end)
+fovSlider.InputEnded:Connect(function()
+    fovDrag.active = false
+end)
+uis.InputChanged:Connect(function(input)
+    if fovDrag.active and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local relX = math.clamp((input.Position.X - fovSlider.AbsolutePosition.X) / fovSlider.AbsoluteSize.X, 0, 1)
+        cfg.fov = math.floor(relX * 300 + 30)
+        updateFovDisplay()
+    end
+end)
+
+-- [[ HIDE FOV ТОГГЛ ]] --
+local hideToggle = Instance.new("TextButton")
+hideToggle.Size = UDim2.new(0.4, 0, 0, 25)
+hideToggle.Position = UDim2.new(0.55, 0, 0, 70)
+hideToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+hideToggle.Text = "HIDE"
+hideToggle.TextColor3 = Color3.fromRGB(200, 200, 220)
+hideToggle.Font = Enum.Font.GothamBold
+hideToggle.TextSize = 12
+hideToggle.Parent = menu
+
+local hideCorner = Instance.new("UICorner")
+hideCorner.CornerRadius = UDim.new(0, 6)
+hideCorner.Parent = hideToggle
+
+hideToggle.MouseButton1Click:Connect(function()
+    cfg.hideFov = not cfg.hideFov
+    hideToggle.Text = cfg.hideFov and "SHOW" or "HIDE"
+    hideToggle.BackgroundColor3 = cfg.hideFov and Color3.fromRGB(60, 40, 40) or Color3.fromRGB(40, 40, 50)
+end)
+
+-- [[ ЗАКРЫТИЕ МЕНЮ ПО КНОПКЕ ]] --
+toggleBtn.MouseButton1Click:Connect(function()
+    menuOpen = not menuOpen
+    menu.Visible = menuOpen
+end)
+
+-- [[ FOV КРУГ (ВИДИМЫЙ / СКРЫТЫЙ) ]] --
+local fovCircle = Instance.new("ImageLabel")
+fovCircle.Size = UDim2.new(0, cfg.fov * 2, 0, cfg.fov * 2)
+fovCircle.Position = UDim2.new(0.5, -cfg.fov, 0.5, -cfg.fov)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Image = "rbxassetid://7077614225"
+fovCircle.ImageColor3 = Color3.fromRGB(255, 255, 255)
+fovCircle.ImageTransparency = 0.85
+fovCircle.ClipsDescendants = false
+fovCircle.Parent = screenGui
+
+local function updateFovCircle()
+    fovCircle.Size = UDim2.new(0, cfg.fov * 2, 0, cfg.fov * 2)
+    fovCircle.Position = UDim2.new(0.5, -cfg.fov, 0.5, -cfg.fov)
+    fovCircle.Visible = not cfg.hideFov
+end
+
+-- [[ ОБНОВЛЕНИЕ FOV КРУГА ]] --
+local fovUpdateConn
+local function startFovUpdate()
+    if fovUpdateConn then fovUpdateConn:Disconnect() end
+    fovUpdateConn = rs.RenderStepped:Connect(function()
+        updateFovCircle()
+    end)
+end
+startFovUpdate()
+
+-- [[ АИМБОТ ЦИКЛ ]] --
+rs.RenderStepped:Connect(aimbot)
+
+-- [[ БАЙПАСС ОБНАРУЖЕНИЯ ТРАССИРОВКИ ]] --
+-- Используем метатаблицы для маскировки
+local mt = getrawmetatable and getrawmetatable(game) or getmetatable(game)
+if mt then
+    local old = mt.__namecall
+    mt.__namecall = function(self, ...)
+        local args = {...}
+        if args[1] == "Raycast" and cfg.enabled then
+            return nil
+        end
+        return old and old(self, ...)
+    end
+end
+
+-- [[ ОБФУСЦИРОВАННЫЕ ИМЕНА ДЛЯ ЗАЩИТЫ ]] --
+screenGui.Name = string.char(math.random(65, 90)) .. string.char(math.random(97, 122)) .. string.char(math.random(65, 90)) .. math.random(100, 999)
+toggleBtn.Name = string.char(math.random(65, 90)) .. string.char(math.random(97, 122)) .. math.random(100, 999)
+menu.Name = string.char(math.random(65, 90)) .. string.char(math.random(97, 122)) .. math.random(100, 999)
+
+-- [[ КОМПАКТНЫЙ ЗАПУСК ]] --
+local success, err = pcall(function()
+    print("Aimbot loaded successfully")
+end)
+if not success then
+    print("Error: " .. err)
+end
