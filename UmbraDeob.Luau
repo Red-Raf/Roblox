@@ -1,5 +1,5 @@
 -- ============================================================
--- Umbra Deobfuscator v6.0 — Mobile UI + Stealth
+-- Umbra Deobfuscator v6.0 — Mobile UI + Stealth (FIXED)
 -- Всё в одном скрипте, без файлов
 -- Обход детекта, копирование в буфер
 -- ============================================================
@@ -8,6 +8,7 @@
 local oldLoadstring = loadstring
 local oldHttpGet = game.HttpGet
 local oldHttpGetAsync = game.HttpGetAsync
+local oldError = error  -- <-- ИСПРАВЛЕНО: добавляем сохранение original error
 
 -- Маскируемся под системный скрипт
 local function stealthMode()
@@ -23,13 +24,13 @@ local function stealthMode()
         script.Name = "System"
         script.Enabled = true
     end
-    
+
     -- Маскируем debug
     if debug then
         debug.getinfo = function() return nil end
         debug.getregistry = function() return {} end
     end
-    
+
     -- Перехватываем error("Tamper")
     _G.error = function(msg, lvl)
         if msg and type(msg) == "string" and msg:find("Tamper") then
@@ -69,9 +70,7 @@ local ConsoleTab = Window:CreateTab("Консоль", 0)
 local capturedScripts = {}
 local scriptCounter = 0
 local statusMessages = {}
-local isCapturing = true
 local currentDeobfuscated = ""
-local selectedScript = nil
 
 -- ===== 5. СИСТЕМА СТАТУСА =====
 local function fireStatus(msg)
@@ -106,11 +105,11 @@ local function deobfuscateScript(code)
     if not code or code == "" then
         return nil, "Код пуст"
     end
-    
+
     fireStatus("[*] Начало деобфускации...")
-    
+
     local result = code
-    
+
     -- 1. Удаляем анти-дамп
     result = result:gsub('error%s*%(%-?"[Tt]amper[^)]*%)', '-- anti-dump removed')
     result = result:gsub('local function r3%(%.%.%.)%s*error%(%-?"Tamper[^)]*%)%s*return%s*end', '-- anti-dump removed')
@@ -118,7 +117,7 @@ local function deobfuscateScript(code)
     result = result:gsub('while true do%s*l1 = l2;%s*l2 = l1;%s*r3%(%);%s*end', '-- loop removed')
     result = result:gsub('if r1 then', 'if true then')
     result = result:gsub('error%s*%(', 'print(')
-    
+
     -- 2. Извлекаем строки
     local strings = {}
     for str in result:gmatch('"([^"\\]*)"') do
@@ -129,21 +128,21 @@ local function deobfuscateScript(code)
             end
         end
     end
-    
+
     -- 3. Форматируем
     result = result:gsub('([tT]hen)%s+', '%1\n    ')
     result = result:gsub('([dD]o)%s+', '%1\n    ')
     result = result:gsub('([eE]lse)%s+', '%1\n    ')
     result = result:gsub('%s+', ' ')
     result = result:gsub(';', ';\n')
-    
+
     -- 4. Собираем финальный результат
     local final = "-- ============================================================\n"
     final = final .. "-- Umbra Deobfuscator v6.0 — Декодированный скрипт\n"
     final = final .. "-- Дата: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n"
     final = final .. "-- Найдено строк: " .. #strings .. "\n"
     final = final .. "-- ============================================================\n\n"
-    
+
     if #strings > 0 then
         final = final .. "-- === НАЙДЕННЫЕ СТРОКИ ===\n"
         for i, dec in ipairs(strings) do
@@ -153,10 +152,10 @@ local function deobfuscateScript(code)
         end
         final = final .. "\n"
     end
-    
+
     final = final .. "-- === ОСНОВНОЙ КОД ===\n"
     final = final .. result
-    
+
     fireStatus("[✓] Деобфускация завершена! Найдено строк: " .. #strings)
     return final, #strings
 end
@@ -164,23 +163,23 @@ end
 -- ===== 8. ЗАГРУЗКА СКРИПТА =====
 local function loadAndDeobfuscate(url)
     fireStatus("[*] Загрузка скрипта: " .. url)
-    
+
     local success, code = pcall(function()
         return game:HttpGet(url)
     end)
-    
+
     if not success then
         fireStatus("[!] Ошибка загрузки: " .. tostring(code))
         return nil
     end
-    
+
     if not code or code == "" then
         fireStatus("[!] Скрипт пустой")
         return nil
     end
-    
+
     fireStatus("[✓] Загружено: " .. #code .. " символов")
-    
+
     local deobfuscated, count = deobfuscateScript(code)
     if deobfuscated then
         scriptCounter = scriptCounter + 1
@@ -195,7 +194,7 @@ local function loadAndDeobfuscate(url)
         fireStatus("[✓] Скрипт деобфусцирован! Размер: " .. #deobfuscated .. " символов")
         return deobfuscated
     end
-    
+
     return nil
 end
 
@@ -214,9 +213,7 @@ MainTab:CreateInput({
     Name = "Ссылка на скрипт",
     PlaceholderText = "https://raw.githubusercontent.com/...",
     RemoveTextWhileFocus = false,
-    Callback = function(Text)
-        -- Сохраняем для кнопки
-    end
+    Callback = function(Text) end
 })
 
 MainTab:CreateButton({
@@ -224,20 +221,19 @@ MainTab:CreateButton({
     Callback = function()
         local inputBox = MainTab:GetInput("Ссылка на скрипт")
         local url = inputBox and inputBox:GetText() or ""
-        
+
         if url == "" then
             fireStatus("[!] Введите ссылку на скрипт")
             statusLabel:Set("Статус: ❌ Нет ссылки")
             return
         end
-        
+
         statusLabel:Set("Статус: ⏳ Загрузка...")
         local result = loadAndDeobfuscate(url)
-        
+
         if result then
             statusLabel:Set("Статус: ✅ Деобфусцирован!")
             countLabel:Set("Скриптов: " .. scriptCounter)
-            -- Обновляем вкладку с кодом
             updateCodeDisplay()
         else
             statusLabel:Set("Статус: ❌ Ошибка")
@@ -249,19 +245,18 @@ MainTab:CreateButton({
     Name = "🔄 Деобфусцировать из буфера",
     Callback = function()
         statusLabel:Set("Статус: ⏳ Обработка...")
-        
+
         local clipboard = ""
         if setclipboard then
-            -- Получаем из буфера (если поддерживается)
             clipboard = getclipboard and getclipboard() or ""
         end
-        
+
         if clipboard == "" then
             fireStatus("[!] Буфер обмена пуст или недоступен")
             statusLabel:Set("Статус: ❌ Нет данных")
             return
         end
-        
+
         local deobfuscated, count = deobfuscateScript(clipboard)
         if deobfuscated then
             scriptCounter = scriptCounter + 1
@@ -380,7 +375,7 @@ CodeTab:CreateButton({
             fireStatus("[!] Нет скриптов")
             return
         end
-        
+
         local all = "-- Umbra Dump — Всего скриптов: " .. scriptCounter .. "\n\n"
         for i = 1, scriptCounter do
             local script = capturedScripts[i]
@@ -392,7 +387,7 @@ CodeTab:CreateButton({
                 all = all .. script.source .. "\n\n"
             end
         end
-        
+
         if setclipboard then
             setclipboard(all)
             fireStatus("[✓] Все скрипты скопированы! (" .. scriptCounter .. " шт.)")
@@ -439,7 +434,7 @@ updateCodeDisplay()
 local function finalStealth()
     -- Удаляем следы из глобальной таблицы
     local hiddenVars = {
-        "oldLoadstring", "oldHttpGet", "oldHttpGetAsync",
+        "oldLoadstring", "oldHttpGet", "oldHttpGetAsync", "oldError",
         "Rayfield", "Window", "MainTab", "CodeTab", "ConsoleTab"
     }
     for _, var in ipairs(hiddenVars) do
