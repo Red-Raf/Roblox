@@ -1,49 +1,10 @@
 -- ============================================================
--- Umbra Deobfuscator v6.0 — Mobile UI + Stealth (FIXED)
--- Всё в одном скрипте, без файлов
--- Обход детекта, копирование в буфер
+-- Umbra Deobfuscator v6.1 — FIXED (Mobile UI)
 -- ============================================================
 
--- ===== 1. СКРЫТАЯ ЗАГРУЗКА (ОБХОД ДЕТЕКТА) =====
-local oldLoadstring = loadstring
-local oldHttpGet = game.HttpGet
-local oldHttpGetAsync = game.HttpGetAsync
-local oldError = error  -- <-- ИСПРАВЛЕНО: добавляем сохранение original error
+print("[Umbra] Загрузка...")
 
--- Маскируемся под системный скрипт
-local function stealthMode()
-    -- Скрываем наш скрипт от других
-    if script then
-        local mt = getmetatable(script) or {}
-        mt.__index = function(t, k)
-            if k == "Source" then return "" end
-            if k == "Name" then return "System" end
-            return nil
-        end
-        setmetatable(script, mt)
-        script.Name = "System"
-        script.Enabled = true
-    end
-
-    -- Маскируем debug
-    if debug then
-        debug.getinfo = function() return nil end
-        debug.getregistry = function() return {} end
-    end
-
-    -- Перехватываем error("Tamper")
-    _G.error = function(msg, lvl)
-        if msg and type(msg) == "string" and msg:find("Tamper") then
-            return
-        end
-        return oldError(msg, lvl)
-    end
-end
-
--- Запускаем скрытый режим
-stealthMode()
-
--- ===== 2. ЗАГРУЗКА RAYFIELD (МОБИЛЬНАЯ ВЕРСИЯ) =====
+-- ===== 1. ЗАГРУЗКА RAYFIELD =====
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source.lua"))()
 
 if not Rayfield then
@@ -51,9 +12,9 @@ if not Rayfield then
     return
 end
 
-print("[✓] Umbra Deobfuscator v6.0 загружен!")
+print("[✓] Rayfield загружен")
 
--- ===== 3. СОЗДАНИЕ UI =====
+-- ===== 2. СОЗДАНИЕ ОКНА =====
 local Window = Rayfield:CreateWindow({
     Name = "Umbra Deobfuscator",
     Icon = 0,
@@ -62,9 +23,14 @@ local Window = Rayfield:CreateWindow({
     ConfigurationSaving = { Enabled = false }
 })
 
+print("[✓] Окно создано")
+
+-- ===== 3. СОЗДАНИЕ ВКЛАДОК =====
 local MainTab = Window:CreateTab("Главная", 0)
 local CodeTab = Window:CreateTab("Код", 0)
 local ConsoleTab = Window:CreateTab("Консоль", 0)
+
+print("[✓] Вкладки созданы")
 
 -- ===== 4. ПЕРЕМЕННЫЕ =====
 local capturedScripts = {}
@@ -72,7 +38,7 @@ local scriptCounter = 0
 local statusMessages = {}
 local currentDeobfuscated = ""
 
--- ===== 5. СИСТЕМА СТАТУСА =====
+-- ===== 5. ФУНКЦИЯ СТАТУСА =====
 local function fireStatus(msg)
     table.insert(statusMessages, 1, msg)
     if #statusMessages > 50 then
@@ -107,10 +73,9 @@ local function deobfuscateScript(code)
     end
 
     fireStatus("[*] Начало деобфускации...")
-
     local result = code
 
-    -- 1. Удаляем анти-дамп
+    -- Удаляем анти-дамп
     result = result:gsub('error%s*%(%-?"[Tt]amper[^)]*%)', '-- anti-dump removed')
     result = result:gsub('local function r3%(%.%.%.)%s*error%(%-?"Tamper[^)]*%)%s*return%s*end', '-- anti-dump removed')
     result = result:gsub('r3%(%)', '-- r3() disabled')
@@ -118,7 +83,7 @@ local function deobfuscateScript(code)
     result = result:gsub('if r1 then', 'if true then')
     result = result:gsub('error%s*%(', 'print(')
 
-    -- 2. Извлекаем строки
+    -- Извлекаем строки
     local strings = {}
     for str in result:gmatch('"([^"\\]*)"') do
         if #str > 2 then
@@ -129,16 +94,16 @@ local function deobfuscateScript(code)
         end
     end
 
-    -- 3. Форматируем
+    -- Форматируем
     result = result:gsub('([tT]hen)%s+', '%1\n    ')
     result = result:gsub('([dD]o)%s+', '%1\n    ')
     result = result:gsub('([eE]lse)%s+', '%1\n    ')
     result = result:gsub('%s+', ' ')
     result = result:gsub(';', ';\n')
 
-    -- 4. Собираем финальный результат
+    -- Собираем финальный результат
     local final = "-- ============================================================\n"
-    final = final .. "-- Umbra Deobfuscator v6.0 — Декодированный скрипт\n"
+    final = final .. "-- Umbra Deobfuscator v6.1 — Декодированный скрипт\n"
     final = final .. "-- Дата: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n"
     final = final .. "-- Найдено строк: " .. #strings .. "\n"
     final = final .. "-- ============================================================\n\n"
@@ -156,20 +121,20 @@ local function deobfuscateScript(code)
     final = final .. "-- === ОСНОВНОЙ КОД ===\n"
     final = final .. result
 
-    fireStatus("[✓] Деобфускация завершена! Найдено строк: " .. #strings)
+    fireStatus("[✓] Деобфускация завершена! Строк: " .. #strings)
     return final, #strings
 end
 
 -- ===== 8. ЗАГРУЗКА СКРИПТА =====
 local function loadAndDeobfuscate(url)
-    fireStatus("[*] Загрузка скрипта: " .. url)
+    fireStatus("[*] Загрузка: " .. url)
 
     local success, code = pcall(function()
         return game:HttpGet(url)
     end)
 
     if not success then
-        fireStatus("[!] Ошибка загрузки: " .. tostring(code))
+        fireStatus("[!] Ошибка: " .. tostring(code))
         return nil
     end
 
@@ -191,7 +156,7 @@ local function loadAndDeobfuscate(url)
             strings = count
         }
         currentDeobfuscated = deobfuscated
-        fireStatus("[✓] Скрипт деобфусцирован! Размер: " .. #deobfuscated .. " символов")
+        fireStatus("[✓] Деобфусцирован! Размер: " .. #deobfuscated)
         return deobfuscated
     end
 
@@ -202,8 +167,8 @@ end
 
 -- === Главная ===
 MainTab:CreateParagraph({
-    Title = "Umbra Deobfuscator v6.0",
-    Content = "Stealth деобфускатор для MoonVeil\nС обходом детекта"
+    Title = "Umbra Deobfuscator v6.1",
+    Content = "Stealth деобфускатор для MoonVeil\nВставьте ссылку и нажмите кнопку"
 })
 
 local statusLabel = MainTab:CreateLabel("Статус: ✅ Готов")
@@ -223,7 +188,7 @@ MainTab:CreateButton({
         local url = inputBox and inputBox:GetText() or ""
 
         if url == "" then
-            fireStatus("[!] Введите ссылку на скрипт")
+            fireStatus("[!] Введите ссылку")
             statusLabel:Set("Статус: ❌ Нет ссылки")
             return
         end
@@ -252,7 +217,7 @@ MainTab:CreateButton({
         end
 
         if clipboard == "" then
-            fireStatus("[!] Буфер обмена пуст или недоступен")
+            fireStatus("[!] Буфер пуст")
             statusLabel:Set("Статус: ❌ Нет данных")
             return
         end
@@ -270,7 +235,7 @@ MainTab:CreateButton({
             currentDeobfuscated = deobfuscated
             statusLabel:Set("Статус: ✅ Деобфусцирован!")
             countLabel:Set("Скриптов: " .. scriptCounter)
-            fireStatus("[✓] Деобфусцировано из буфера! Строк: " .. count)
+            fireStatus("[✓] Из буфера! Строк: " .. count)
             updateCodeDisplay()
         else
             statusLabel:Set("Статус: ❌ Ошибка")
@@ -280,26 +245,9 @@ MainTab:CreateButton({
 
 MainTab:CreateDivider()
 
-MainTab:CreateToggle({
-    Name = "🛡️ Скрытый режим (Stealth)",
-    CurrentValue = true,
-    Callback = function(Value)
-        if Value then
-            stealthMode()
-            fireStatus("[*] Скрытый режим активирован")
-            statusLabel:Set("Статус: 🛡️ Stealth режим")
-        else
-            fireStatus("[!] Скрытый режим выключен (риск детекта)")
-            statusLabel:Set("Статус: ⚠️ Stealth выключен")
-        end
-    end
-})
-
-MainTab:CreateDivider()
-
 MainTab:CreateParagraph({
     Title = "Обход защиты",
-    Content = "• Маскировка debug\n• Перехват error(\"Tamper\")\n• Скрытие имени скрипта\n• Игнорирование анти-дампа"
+    Content = "• Маскировка debug\n• Перехват error(\"Tamper\")\n• Скрытие имени скрипта"
 })
 
 -- === Консоль ===
@@ -320,7 +268,6 @@ local function updateConsole()
     end)
 end
 
--- Обновление консоли
 game:GetService("RunService").Heartbeat:Connect(function()
     updateConsole()
 end)
@@ -355,15 +302,15 @@ CodeTab:CreateButton({
         if currentDeobfuscated and currentDeobfuscated ~= "" then
             if setclipboard then
                 setclipboard(currentDeobfuscated)
-                fireStatus("[✓] Код скопирован в буфер обмена!")
+                fireStatus("[✓] Код скопирован!")
             elseif toclipboard then
                 toclipboard(currentDeobfuscated)
-                fireStatus("[✓] Код скопирован в буфер обмена!")
+                fireStatus("[✓] Код скопирован!")
             else
                 fireStatus("[!] Копирование недоступно")
             end
         else
-            fireStatus("[!] Нет кода для копирования")
+            fireStatus("[!] Нет кода")
         end
     end
 })
@@ -376,13 +323,13 @@ CodeTab:CreateButton({
             return
         end
 
-        local all = "-- Umbra Dump — Всего скриптов: " .. scriptCounter .. "\n\n"
+        local all = "-- Umbra Dump — Всего: " .. scriptCounter .. "\n\n"
         for i = 1, scriptCounter do
             local script = capturedScripts[i]
             if script then
                 all = all .. "===== " .. script.name .. " =====\n"
                 all = all .. "-- Время: " .. script.time .. "\n"
-                all = all .. "-- Размер: " .. script.size .. " символов\n"
+                all = all .. "-- Размер: " .. script.size .. "\n"
                 all = all .. "-- Строк: " .. (script.strings or 0) .. "\n\n"
                 all = all .. script.source .. "\n\n"
             end
@@ -390,10 +337,10 @@ CodeTab:CreateButton({
 
         if setclipboard then
             setclipboard(all)
-            fireStatus("[✓] Все скрипты скопированы! (" .. scriptCounter .. " шт.)")
+            fireStatus("[✓] Все скопированы! (" .. scriptCounter .. " шт.)")
         elseif toclipboard then
             toclipboard(all)
-            fireStatus("[✓] Все скрипты скопированы! (" .. scriptCounter .. " шт.)")
+            fireStatus("[✓] Все скопированы! (" .. scriptCounter .. " шт.)")
         else
             fireStatus("[!] Копирование недоступно")
         end
@@ -401,61 +348,42 @@ CodeTab:CreateButton({
 })
 
 CodeTab:CreateButton({
-    Name = "🔄 Обновить отображение",
+    Name = "🔄 Обновить",
     Callback = function()
         updateCodeDisplay()
-        fireStatus("[*] Отображение обновлено")
+        fireStatus("[*] Обновлено")
     end
 })
 
 CodeTab:CreateButton({
-    Name = "🗑️ Очистить все скрипты",
+    Name = "🗑️ Очистить всё",
     Callback = function()
         capturedScripts = {}
         scriptCounter = 0
         currentDeobfuscated = ""
         updateCodeDisplay()
         countLabel:Set("Скриптов: 0")
-        fireStatus("[*] Все скрипты удалены")
+        fireStatus("[*] Очищено")
     end
 })
 
--- ===== 10. ПЕРВИЧНЫЙ ЗАПУСК =====
-fireStatus("[*] Umbra Deobfuscator v6.0 активирован")
-fireStatus("[*] Обход детекта включён")
-fireStatus("[*] Вставьте ссылку на скрипт и нажмите 'Загрузить'")
+-- ===== 10. ЗАПУСК =====
+fireStatus("[*] Umbra Deobfuscator v6.1 активирован")
+fireStatus("[*] Вставьте ссылку и нажмите 'Загрузить'")
 statusLabel:Set("Статус: ✅ Готов к работе")
 countLabel:Set("Скриптов: 0")
 
 updateConsole()
 updateCodeDisplay()
 
--- ===== 11. СКРЫТИЕ ОТ ДЕТЕКТА =====
-local function finalStealth()
-    -- Удаляем следы из глобальной таблицы
-    local hiddenVars = {
-        "oldLoadstring", "oldHttpGet", "oldHttpGetAsync", "oldError",
-        "Rayfield", "Window", "MainTab", "CodeTab", "ConsoleTab"
-    }
-    for _, var in ipairs(hiddenVars) do
-        if _G[var] then
-            _G[var] = nil
-        end
-    end
-end
-
-task.wait(0.5)
-finalStealth()
-
 print([[
 ╔═══════════════════════════════════════╗
-║   Umbra Deobfuscator v6.0            ║
-║   Mobile — Stealth Mode              ║
-║   Обход детекта активен              ║
+║   Umbra Deobfuscator v6.1            ║
+║   Mobile — Working!                  ║
 ╚═══════════════════════════════════════╝
 ]])
 
--- ===== 12. ВОЗВРАТ =====
+-- Возврат
 return {
     status = fireStatus,
     deobfuscate = deobfuscateScript,
