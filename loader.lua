@@ -4,7 +4,8 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 
-local API_URL = "https://KeyBot-rfgspl.amvera.io/api/check"
+local API_URL = "https://keybot-rfgspl.mia0.amvera.tech/api/check"
+
 
 
 local ScreenGui = Instance.new("ScreenGui")
