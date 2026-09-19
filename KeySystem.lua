@@ -1,4 +1,3 @@
--- Сервисы
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
@@ -8,7 +7,7 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 local API_URL  = "https://keybot-rfgspl.mia0.amvera.tech/api/check"
 local API_BIND = "https://keybot-rfgspl.mia0.amvera.tech/api/bind"
 
--- HWID
+
 local function getHWID()
     if getdeviceid then return tostring(getdeviceid())
     elseif getexecutorname then return tostring(Player.UserId).."_"..tostring(getexecutorname())
@@ -16,7 +15,7 @@ local function getHWID()
 end
 local HWID = getHWID()
 
--- HTTP helper
+
 local function httpRequest(url, method, body)
     local fn = (syn and syn.request) or http_request or request or (fluxus and fluxus.request)
     if not fn then return nil, "no_http" end
@@ -31,16 +30,13 @@ local function httpRequest(url, method, body)
     return nil, "failed"
 end
 
--- ════════════════════════════════════════════════════════════
---  UI
--- ════════════════════════════════════════════════════════════
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SmileHubKeySystem"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
 
--- Главный фрейм
+
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 400, 0, 340)
 MainFrame.Position = UDim2.new(0.5, -200, 0.5, -170)
@@ -54,7 +50,7 @@ MainStroke.Color = Color3.fromRGB(255, 255, 255)
 MainStroke.Thickness = 1.5
 MainStroke.Parent = MainFrame
 
--- TopBar
+
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 38)
 TopBar.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
@@ -62,7 +58,6 @@ TopBar.BorderSizePixel = 0
 TopBar.Parent = MainFrame
 Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 6)
 
--- Нижняя заглушка скруглений у TopBar
 local TopBarFix = Instance.new("Frame")
 TopBarFix.Size = UDim2.new(1, 0, 0, 10)
 TopBarFix.Position = UDim2.new(0, 0, 1, -10)
